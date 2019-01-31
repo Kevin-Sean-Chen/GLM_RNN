@@ -222,9 +222,9 @@ def der(THETA):
     return der
 
 #optimize all
-theta_guess = 10,10,0.01,10#,10,0.001  #a_, k_, A_, B_, C_, D_ 
+theta_guess = 10,1,0.01,0.1#,10,0.001  #a_, k_, A_, B_, C_, D_ 
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
-res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),bounds = ((0,None),(0,None),(None,None),(None,None)))
+res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead',bounds = ((0,None),(0,None),(None,None),(None,None)))
 theta_fit = res.x
 #optimize logistic
 theta_guess = 1,0.5  #a_, k_, A_, B_, C_, D_ 
