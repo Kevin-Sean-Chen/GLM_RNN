@@ -13,6 +13,7 @@ import time
 import math
 import scipy.optimize   #for log-likelihood
 from scipy.special import iv  #for Bessel function
+from scipy.stats import vonmises  #for von Mises distribution
 
 #Hybrid Gaussian process for angle time series
 def d_theta(alpha, dc_perp, K, w, dC):
@@ -22,17 +23,18 @@ def d_theta(alpha, dc_perp, K, w, dC):
     W as the weighting/kernel on concentration in the signoidal function for tumbling rate 
     '''
     wv = alpha*dc_perp + K*np.random.randn()  #weathervaning strategy
-    P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003  #sigmoidal function with parameters w
+    #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003  #sigmoidal function with parameters w
+    P_event = 0.023/(1 + np.exp(40*dC/dt))  #less parameter version
     if np.random.rand() < P_event:
         beta = 1
     else:
         beta = 0
-    rt = beta*np.random.rand()*360 #(2*np.pi)  #run-and-tumble strategy
+    rt = beta*(np.random.rand()*360-180) #(2*np.pi)  #run-and-tumble strategy
     #rt = beta*(np.random.randn()*K + 100)  #alternative Gaussian mixture
     dth = wv + rt
-    if dth > 360:
+    if dth > 180:
         dth = dth-360  #bounded by angle measurements
-    if dth < 0:
+    if dth < -180:
         dth = dth+360
     return dth
 
@@ -56,7 +58,7 @@ duT = 60*60*1
 d = 0.18
 
 #chemotaxis strategy parameter
-alpha = 25  #strength of OU forcing
+alpha = 20  #strength of OU forcing
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
 T = 3000
@@ -126,10 +128,6 @@ for ii in range(20):
         dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])      
         dth = d_theta(alpha, -dc_perp, K, 0, dC)
         ths[t] = ths[t-1] + dth*dt
-        if ths[t] > 360:
-            ths[t] = ths[t]-360  #bounded by angle measurements
-        if ths[t] < 0:
-            ths[t] =ths[t]+360
         
         #data collection
         dcs[t] = dC  #concentration
@@ -147,10 +145,9 @@ for ii in range(20):
         R = np.array(((c,s), (-s, c)))  #rotation matrix, changing coordinates
         dxy = np.dot(R,dd)
 
-        #xs[t] = xs[t-1] + dxy[0]*dt
-        #ys[t] = ys[t-1] + dxy[1]*dt
-        xs[t] = xs[t-1] + dd[1]*dt
-        ys[t] = ys[t-1] + dd[0]*dt
+        xs[t] = xs[t-1] + dxy[0]*dt
+        ys[t] = ys[t-1] + dxy[1]*dt
+
     all_dc_p.append(dcps)  #recording dC_perpendicular
     all_dc.append(dcs)  #recording dC
     all_th.append(dths)  #recording head angle
@@ -159,26 +156,59 @@ for ii in range(20):
     plt.hold(True)
 
 ###ALL DATA HERE~~
-data_th = np.array(all_th)
-data_dcp = np.array(all_dc_p)
-data_dc = np.array(all_dc)
+data_th = np.array(all_th).reshape(-1)
+data_dcp = np.array(all_dc_p).reshape(-1)
+data_dc = np.array(all_dc).reshape(-1)
 
 #####
 #Inference for chemotactic strategy
 #####
+
+#von Mises distribution test
+d2r = np.pi/180
+vm_par = vonmises.fit((data_th-alpha*data_dcp)*d2r, scale=1)
+plt.hist(data_th*d2r,bins=100,normed=True);
+plt.hold(True)
+xx = np.linspace(np.min(data_th*d2r),np.max(data_th*d2r),100)
+rv = vonmises(vm_par[0])
+plt.plot(xx, rv.pdf(xx),linewidth=3)
+
+#negative log-likelihood
 def nLL(THETA, dth,dcp,dc):
-    a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
-    P = sigmoid(A_, B_, C_, D_, dcp)
-    VM = np.exp(k_*np.cos((dth-a_*dcp)*np.pi/180)) / (2*np.pi*iv(0,k_))#von Mises distribution
+    #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
+    a_,k_,A_,B_ = THETA
+    #P = sigmoid(A_, B_, C_, D_, dcp)
+    P = sigmoid2(A_,B_,dcp)
+    #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
+    #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
+    rv = vonmises(k_)#(vm_par[0])
+    VM = rv.pdf((dth-a_*dcp)*d2r)
     marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
-    nll = -np.sum(np.log(marginalP+1e-7), axis=1)
+    nll = -np.sum(np.log(marginalP+1e-7))#, axis=1)
     #fst = np.einsum('ij,ij->i', 1-P, VM)
     #snd = np.sum(1/np.pi*P, axis=1)
     return np.sum(nll)
 
+rv = vonmises(K)
+VM = rv.pdf((data_th-alpha*data_dcp)*d2r)
+def nLL2(THETA, VM, dth,dcp,dc):
+    A_, B_ = THETA  #inferred paramter
+    P = sigmoid2(A_, B_, dcp)
+    marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
+    nll = -np.sum(np.log(marginalP+1e-7))
+    return np.sum(nll)
+
+#sigmoidal function
 def sigmoid(a,b,c,d,x):
     #a,b,c,d = p
     y = a / (b + np.exp(c*x)) + d
+    ###Simulated function
+    #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003
+    return y
+
+def sigmoid2(a,b,x):
+    #a,b,c,d = p
+    y = a / (1 + np.exp(b*x))
     ###Simulated function
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003
     return y
@@ -187,11 +217,47 @@ def sigmoid(a,b,c,d,x):
 def der(THETA):
     a_, k_, A_, B_, C_, D_ = THETA
     der = np.zeros(len(THETA))
-    der[0] = 
-    der[1] = 
+    der[0] = 0
+    der[1] = 0 #...
     return der
-    
-theta_guess = 10,1,0.01,0.1,10,0.001  #a_, k_, A_, B_, C_, D_ 
-###Ground Truth: 25,5,0.023,0.4,40,0.003
-res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
 
+#optimize all
+theta_guess = 10,1,0.01,0.1#,10,0.001  #a_, k_, A_, B_, C_, D_ 
+###Ground Truth: 25,5,0.023,0.4,40,0.003
+res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead',bounds = ((0,None),(0,None),(None,None),(None,None)))
+theta_fit = res.x
+#optimize logistic
+theta_guess = 1,0.5  #a_, k_, A_, B_, C_, D_ 
+###Ground Truth: 25,5,0.023,0.4,40,0.003
+res = scipy.optimize.minimize(nLL2,theta_guess,args=(VM,data_th,data_dcp,data_dc),bounds = ((0,None),(0,None)))
+theta_fit = res.x
+
+###
+xp = np.linspace(-0.5, 0.5, 1000)
+pxp=sigmoid(theta_fit[2],theta_fit[3],theta_fit[4],theta_fit[5],xp)
+
+#plt.plot(x*10, y*0.1,'.')
+plt.plot(xp,pxp,'-',linewidth=3,label='fit')
+plt.hold(True)
+plt.plot(xp,sigmoid((0.023,0.4,40,0.003),xp),linewidth=3,label='ground-truth')
+plt.xlabel('x')
+plt.ylabel('y',rotation='horizontal') 
+plt.grid(True)
+plt.legend()
+
+### step-wise fitting
+aa,bb = np.histogram(data_dc,bins=10)
+dC_bin = []
+for i in range(0,len(bb)-1):
+    pos = np.where((data_dc>bb[i]) & (data_dc<=bb[i+1]))[0]
+    dC_bin.append(pos)
+def nLL3(THETA, dth,dcp):
+    a_, k_, p_ = THETA  #inferred paramter
+    rv = vonmises(k_)
+    VM = rv.pdf((dth-a_*dcp)*d2r)
+    marginalP = np.multiply((1-p_), VM) + (1/(2*np.pi))*p_
+    nll = -np.sum(np.log(marginalP+1e-7))
+    return np.sum(nll)
+theta_guess = np.array([10,10,0.1])
+res = scipy.optimize.minimize(nLL3,theta_guess,args=(data_th,data_dcp),bounds = ((None, None), (0,None),(0,1)))
+theta_fit = res.x
