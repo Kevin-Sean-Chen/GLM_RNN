@@ -24,7 +24,7 @@ def d_theta(alpha, dc_perp, K, w, dC):
     '''
     wv = alpha*dc_perp + K*np.random.randn()  #weathervaning strategy
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003  #sigmoidal function with parameters w
-    P_event = 0.023/(1 + np.exp(40*dC/dt))  #less parameter version
+    P_event = 5*0.023/(1 + np.exp(40*dC/dt))  #less parameter version
     if np.random.rand() < P_event:
         beta = 1
     else:
@@ -178,7 +178,7 @@ def nLL(THETA, dth,dcp,dc):
     #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
     a_,k_,A_,B_ = THETA
     #P = sigmoid(A_, B_, C_, D_, dcp)
-    P = sigmoid2(A_,B_,dcp)
+    P = sigmoid2(A_,B_,dc)
     #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
     #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
     rv = vonmises(k_)#(vm_par[0])
@@ -221,43 +221,59 @@ def der(THETA):
     der[1] = 0 #...
     return der
 
-#optimize all
-theta_guess = 10,1,0.01,0.1#,10,0.001  #a_, k_, A_, B_, C_, D_ 
+#optimize all with less parameters
+theta_guess = 1,1,0.1,100  #,10,0.001  #a_, k_, A_, B_
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
-res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead',bounds = ((0,None),(0,None),(None,None),(None,None)))
+res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
+                              #,bounds = ((0,None),(0,None),(None,None),(None,None)))
 theta_fit = res.x
-#optimize logistic
-theta_guess = 1,0.5  #a_, k_, A_, B_, C_, D_ 
-###Ground Truth: 25,5,0.023,0.4,40,0.003
-res = scipy.optimize.minimize(nLL2,theta_guess,args=(VM,data_th,data_dcp,data_dc),bounds = ((0,None),(0,None)))
-theta_fit = res.x
+##optimize logistic
+#theta_guess = 1,0.5  #a_, k_, A_, B_, C_, D_ 
+####Ground Truth: 25,5,0.023,0.4,40,0.003
+#res = scipy.optimize.minimize(nLL2,theta_guess,args=(VM,data_th,data_dcp,data_dc),bounds = ((0,None),(0,None)))
+#theta_fit = res.x
 
-###
+
+###check on von Mises density
+#plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
+aa,bb = np.histogram((data_th-alpha*data_dcp)*d2r,bins=200)
+plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03)
+plt.hold(True)
+rv = vonmises(res.x[1])
+#plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
+plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r')
+plt.axis([-1,1,0,0.2])
+#normalization by bin size???
+#checking pdf density
+print('sum of histogram:',np.sum(aa/len(data_th)))
+print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
+
+###check on logistic fitting
 xp = np.linspace(-0.5, 0.5, 1000)
-pxp=sigmoid(theta_fit[2],theta_fit[3],theta_fit[4],theta_fit[5],xp)
-
-#plt.plot(x*10, y*0.1,'.')
+pxp=sigmoid2(res.x[2],res.x[3],xp)
+#pxp=sigmoid1(res.x[2],res.x[3],res.x[4],res.x[5],xp)
 plt.plot(xp,pxp,'-',linewidth=3,label='fit')
 plt.hold(True)
-plt.plot(xp,sigmoid((0.023,0.4,40,0.003),xp),linewidth=3,label='ground-truth')
+plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.5)
+#plt.plot(xp,sigmoid1(0.023,0.4,140/0.6,0.003,xp),linewidth=3,label='ground-truth')
 plt.xlabel('x')
 plt.ylabel('y',rotation='horizontal') 
 plt.grid(True)
 plt.legend()
 
 ### step-wise fitting
-aa,bb = np.histogram(data_dc,bins=10)
-dC_bin = []
-for i in range(0,len(bb)-1):
-    pos = np.where((data_dc>bb[i]) & (data_dc<=bb[i+1]))[0]
-    dC_bin.append(pos)
-def nLL3(THETA, dth,dcp):
-    a_, k_, p_ = THETA  #inferred paramter
-    rv = vonmises(k_)
-    VM = rv.pdf((dth-a_*dcp)*d2r)
-    marginalP = np.multiply((1-p_), VM) + (1/(2*np.pi))*p_
-    nll = -np.sum(np.log(marginalP+1e-7))
-    return np.sum(nll)
-theta_guess = np.array([10,10,0.1])
-res = scipy.optimize.minimize(nLL3,theta_guess,args=(data_th,data_dcp),bounds = ((None, None), (0,None),(0,1)))
-theta_fit = res.x
+#aa,bb = np.histogram(data_dc,bins=10)
+#dC_bin = []
+#for i in range(0,len(bb)-1):
+#    pos = np.where((data_dc>bb[i]) & (data_dc<=bb[i+1]))[0]
+#    dC_bin.append(pos)
+#def nLL3(THETA, dth,dcp):
+#    a_, k_, p_ = THETA  #inferred paramter
+#    rv = vonmises(k_)
+#    VM = rv.pdf((dth-a_*dcp)*d2r)
+#    marginalP = np.multiply((1-p_), VM) + (1/(2*np.pi))*p_
+#    nll = -np.sum(np.log(marginalP+1e-7))
+#    return np.sum(nll)
+#theta_guess = np.array([10,10,0.1])
+#res = scipy.optimize.minimize(nLL3,theta_guess,args=(data_th,data_dcp),bounds = ((None, None), (0,None),(0,1)))
+#theta_fit = res.x
