@@ -85,9 +85,10 @@ d = 0.18
 
 #chemotaxis strategy parameter
 K_win = np.linspace(0,10,10/0.6)
-K_dc = -3*(temporal_kernel(2.,K_win))+.0  #random-turning kernel (biphasic form)
+K_dc = -30*(temporal_kernel(1.,K_win))+.0  #random-turning kernel (biphasic form)
+K_dc[np.where(K_dc>0)[0]] = 0
 #K_dc = -np.exp(-K_win/0.5) 
-wv_win = 0.1
+wv_win = 0.5
 K_dcp = np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
@@ -142,7 +143,7 @@ plt.figure()
 plt.plot(xs,ys)
 plt.figure()
 x = np.arange(np.min(xs),np.max(xs),1)
-xx_grad = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50))
+xx_grad = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50)) #same background environment
 plt.imshow(np.expand_dims(xx_grad,axis=1).T,extent=[np.min(xs),np.max(xs),np.min(ys),np.max(ys)])
 plt.hold(True)
 plt.plot(xs,ys,'white')
@@ -158,23 +159,29 @@ for ii in range(20):
     ys = np.zeros(time.shape)  #2D location
     xs[0] = np.random.randn()*0.1
     ys[0] = np.random.randn()*0.1
+    prehist = max(len(K_dc),len(K_dcp))  #pre-histroy length
+    xs[:prehist] = np.random.randn(prehist)
+    ys[:prehist] = np.random.randn(prehist)
     ths = np.zeros(time.shape)  #agle with 1,0
-    ths[0] = np.random.rand()*0
-    dcs = np.zeros(time.shape)
-    dcps = np.zeros(time.shape)
+    ths[:prehist] = np.random.randn(prehist)
+    dxy = np.random.randn(2)
+    dcs = np.zeros((time.shape[0],prehist))
+    dcps = np.zeros((time.shape[0],prehist))
     dths = np.zeros(time.shape)
-    for t in range(1,len(time)):
+    for t in range(prehist,len(time)):
         
-        dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-        dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])      
-        dth = d_theta(alpha, -dc_perp, K, 0, dC)
+        #concentration = gradient(C0,xs[t-1],ys[t-1])
+        #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
+        dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(0,len(K_dc))])
+        #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
+        dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(0,len(K_dcp))])    
+        dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
         ths[t] = ths[t-1] + dth*dt
         
         #data collection
         dcs[t] = dC  #concentration
         dcps[t] = dc_perp  #perpendicular concentration difference
         dths[t] = dth  #theta angle change
-        
         
         e1 = np.array([1,0])
         vec = np.array([xs[t-1],ys[t-1]])
