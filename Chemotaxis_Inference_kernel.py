@@ -25,7 +25,7 @@ def temporal_kernel(alpha,tau):
     D_tau = alpha*np.exp(-alpha*tau)*((alpha*tau)**5/math.factorial(5) - (alpha*tau)**7/math.factorial(7))
     return D_tau
 tt = np.linspace(0,10,10/0.6)
-plt.plot(tt,-temporal_kernel(2.,tt),'-o')
+plt.plot(tt,temporal_kernel(2.,tt),'-o')
 
 #check with auto-correlation in time series
 def autocorr(x):
@@ -85,13 +85,13 @@ d = 0.18
 
 #chemotaxis strategy parameter
 K_win = np.linspace(0,10,10/0.6)
-#K_dc = 3*(temporal_kernel(2.,K_win))+.0  #random-turning kernel (biphasic form)
-K_dc = -np.exp(-K_win/0.5) 
+K_dc = -3*(temporal_kernel(2.,K_win))+.0  #random-turning kernel (biphasic form)
+#K_dc = -np.exp(-K_win/0.5) 
 wv_win = 0.1
 K_dcp = np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
-T = 3000
+T = 6000
 dt = 0.6  #seconds
 v_m = 0.12  #mm/s
 v_s = 0.01  #std of speed
@@ -104,6 +104,9 @@ ys[:prehist] = np.random.randn(prehist)
 ths = np.zeros(time.shape)  #agle with 1,0
 ths[:prehist] = np.random.randn(prehist)
 dxy = np.random.randn(2)
+dcs = np.zeros((time.shape[0],prehist))
+dcps = np.zeros((time.shape[0],prehist))
+dths = np.zeros(time.shape)
 
 ## with turning (Brownian-like tragectories)
 for t in range(prehist,len(time)):
@@ -116,6 +119,11 @@ for t in range(prehist,len(time)):
     dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
     ths[t] = ths[t-1] + dth*dt
     
+    #data collection
+    dcs[t,:] = dC  #concentration
+    dcps[t,:] = dc_perp  #perpendicular concentration difference
+    dths[t] = dth  #theta angle change
+        
     e1 = np.array([1,0])
     vec = np.array([xs[t-1],ys[t-1]])
     theta = math.acos(np.clip(np.dot(vec,e1)/np.linalg.norm(vec)/np.linalg.norm(e1), -1, 1)) #current orienation relative to (1,0)
