@@ -85,11 +85,11 @@ d = 0.18
 
 #chemotaxis strategy parameter
 K_win = np.linspace(0,10,10/0.6)
-K_dc = -30*(temporal_kernel(1.,K_win))+.0  #random-turning kernel (biphasic form)
-K_dc[np.where(K_dc>0)[0]] = 0
+K_dc = 10*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form)
+#K_dc[np.where(K_dc>0)[0]] = 0
 #K_dc = -np.exp(-K_win/0.5) 
 wv_win = 0.5
-K_dcp = np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
+K_dcp = 10*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
 T = 6000
@@ -205,8 +205,10 @@ for ii in range(20):
 
 ###ALL DATA HERE~~
 data_th = np.array(all_th).reshape(-1)
-data_dcp = np.array(all_dc_p).reshape(-1)
-data_dc = np.array(all_dc).reshape(-1)
+#data_dcp = np.array(all_dcp).reshape(-1)
+data_dcp = np.vstack(all_dc)
+#data_dc = np.array(all_dc).reshape(-1)
+data_dc = np.vstack(all_dc_p)    
 
 #####
 #Inference for chemotactic strategy
@@ -214,7 +216,7 @@ data_dc = np.array(all_dc).reshape(-1)
 
 #von Mises distribution test
 d2r = np.pi/180
-vm_par = vonmises.fit((data_th-alpha*data_dcp)*d2r, scale=1)
+vm_par = vonmises.fit((data_th-np.dot(data_dcp,K_dcp))*d2r, scale=1)
 plt.hist(data_th*d2r,bins=100,normed=True);
 plt.hold(True)
 xx = np.linspace(np.min(data_th*d2r),np.max(data_th*d2r),100)
@@ -230,7 +232,7 @@ def nLL(THETA, dth,dcp,dc):
     #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
     #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
     rv = vonmises(k_)#(vm_par[0])
-    VM = rv.pdf((dth-a_*dcp)*d2r)
+    VM = rv.pdf((dth-np.dot(a_,dcp))*d2r)
     marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
     nll = -np.sum(np.log(marginalP+1e-7))#, axis=1)
     #fst = np.einsum('ij,ij->i', 1-P, VM)
@@ -238,7 +240,7 @@ def nLL(THETA, dth,dcp,dc):
     return np.sum(nll)
 
 rv = vonmises(K)
-VM = rv.pdf((data_th-alpha*data_dcp)*d2r)
+VM = rv.pdf((data_th-np.dot(data_dcp,K_dcp))*d2r)
 def nLL2(THETA, VM, dth,dcp,dc):
     A_, B_ = THETA  #inferred paramter
     P = sigmoid2(A_, B_, dcp)
@@ -256,7 +258,7 @@ def sigmoid(a,b,c,d,x):
 
 def sigmoid2(a,b,x):
     #a,b,c,d = p
-    y = a / (1 + np.exp(b*x))
+    y = a / (1 + np.exp(np.dot(b,x)))
     ###Simulated function
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003
     return y
