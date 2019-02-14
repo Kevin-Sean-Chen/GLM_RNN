@@ -15,16 +15,36 @@ import scipy.optimize   #for log-likelihood
 from scipy.special import iv  #for Bessel function
 from scipy.stats import vonmises  #for von Mises distribution
 
+
+#incoporate the temporal kernel for chemo-sensing
+def temporal_kernel(alpha,tau):
+    """
+    biphasic temporal kernel
+    tau is the temporal domain and alpha controls the form
+    """
+    D_tau = alpha*np.exp(-alpha*tau)*((alpha*tau)**5/math.factorial(5) - (alpha*tau)**7/math.factorial(7))
+    return D_tau
+tt = np.linspace(0,10,10/0.6)
+plt.plot(tt,temporal_kernel(2.,tt),'-o')
+
+#check with auto-correlation in time series
+def autocorr(x):
+    """
+    Autocorrelation function for time-series
+    """
+    result = np.correlate(x, x, mode='full')
+    return result[result.size // 2:]
+
 #Hybrid Gaussian process for angle time series
-def d_theta(alpha, dc_perp, K, w, dC):
+def d_theta(K_dcp, dc_perp, K, K_dc, dC):
     '''
     Return change in theta angle for each step
-    Input with alpha for weighting, dc for orthogonal concentration difference, and K covariance in weathervaning
-    W as the weighting/kernel on concentration in the signoidal function for tumbling rate 
+    Input with K_dcp for kernel, dc for orthogonal concentration difference, and K covariance in weathervaning
+    K_dc as the weighting/kernel on concentration in the signoidal function for tumbling rate 
     '''
-    wv = alpha*dc_perp + K*np.random.randn()  #weathervaning strategy
+    wv = np.dot(K_dcp,dc_perp) + K*np.random.randn()  #weathervaning strategy
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003  #sigmoidal function with parameters w
-    P_event = 5*0.023/(1 + np.exp(40*dC/dt))  #less parameter version
+    P_event = 5*0.023/(1 + np.exp(np.dot(K_dc,dC/dt)))  #less parameter version
     if np.random.rand() < P_event:
         beta = 1
     else:
@@ -40,11 +60,17 @@ def d_theta(alpha, dc_perp, K, w, dC):
 
 #concentration gradient in space
 def gradient(C0,x,y):
+    """
+    Gaussian sptatial profile through diffision equation
+    """
     concentration = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50))  #depends on diffusion conditions
     return concentration
 
 #measure for concentration difference for weathervane
 def dc_measure(dxy,xx,yy):
+    """
+    perpendicular concentration measure
+    """
     perp_dir = np.array([-dxy[1], dxy[0]])
     perp_dir = perp_dir/np.linalg.norm(perp_dir)
     perp_dC = gradient(C0, xx+perp_dir[0], yy+perp_dir[1]) - gradient(C0, xx-perp_dir[0], yy-perp_dir[1])
@@ -58,53 +84,69 @@ duT = 60*60*1
 d = 0.18
 
 #chemotaxis strategy parameter
-alpha = 20  #strength of OU forcing
+K_win = np.linspace(0,10,10/0.6)
+K_dc = 10*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form)
+#K_dc[np.where(K_dc>0)[0]] = 0
+#K_dc = -np.exp(-K_win/0.5) 
+wv_win = 0.5
+K_dcp = 10*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
-T = 3000
+T = 6000
 dt = 0.6  #seconds
 v_m = 0.12  #mm/s
 v_s = 0.01  #std of speed
 time = np.arange(0,T*dt,dt)
 xs = np.zeros(time.shape)
 ys = np.zeros(time.shape)  #2D location
-xs[0] = np.random.randn()
-ys[0] = np.random.randn()
+prehist = max(len(K_dc),len(K_dcp))  #pre-histroy length
+xs[:prehist] = np.random.randn(prehist)
+ys[:prehist] = np.random.randn(prehist)
 ths = np.zeros(time.shape)  #agle with 1,0
-ths[0] = np.random.randn()
+ths[:prehist] = np.random.randn(prehist)
 dxy = np.random.randn(2)
+dcs = np.zeros((time.shape[0],prehist))
+dcps = np.zeros((time.shape[0],prehist))
+dths = np.zeros(time.shape)
 
-### with turning (Brownian-like tragectories)
-#for t in range(1,len(time)):
-#    
-#    #concentration = gradient(C0,xs[t-1],ys[t-1])
-#    dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-#    dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])      
-#    dth = d_theta(alpha, -dc_perp, K, 0, dC)
-#    ths[t] = ths[t-1] + dth*dt
-#    
-#    e1 = np.array([1,0])
-#    vec = np.array([xs[t-1],ys[t-1]])
-#    theta = math.acos(np.clip(np.dot(vec,e1)/np.linalg.norm(vec)/np.linalg.norm(e1), -1, 1)) #current orienation relative to (1,0)
-#
-#    vv = v_m + v_s*np.random.randn()
-#    dd = np.array([vv*np.sin(ths[t]*np.pi/180), vv*np.cos(ths[t]*np.pi/180)])  #displacement
-#    c, s = np.cos(theta), np.sin(theta)
-#    R = np.array(((c,s), (-s, c)))  #rotation matrix, changing coordinates
-#    dxy = np.dot(R,dd)
-#    
-#    xs[t] = xs[t-1] + dxy[0]*dt
-#    ys[t] = ys[t-1] + dxy[1]*dt
-#
-##plt.plot(ths)
-#plt.figure()
-#plt.plot(xs,ys)
-#plt.figure()
-#x = np.arange(np.min(xs),np.max(xs),1)
-#xx_grad = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50))
-#plt.imshow(np.expand_dims(xx_grad,axis=1).T,extent=[np.min(xs),np.max(xs),np.min(ys),np.max(ys)])
-#plt.hold(True)
-#plt.plot(xs,ys,'white')
+## with turning (Brownian-like tragectories)
+for t in range(prehist,len(time)):
+    
+    #concentration = gradient(C0,xs[t-1],ys[t-1])
+    #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
+    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(0,len(K_dc))])
+    #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
+    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(0,len(K_dcp))])    
+    dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
+    ths[t] = ths[t-1] + dth*dt
+    
+    #data collection
+    dcs[t,:] = dC  #concentration
+    dcps[t,:] = dc_perp  #perpendicular concentration difference
+    dths[t] = dth  #theta angle change
+        
+    e1 = np.array([1,0])
+    vec = np.array([xs[t-1],ys[t-1]])
+    theta = math.acos(np.clip(np.dot(vec,e1)/np.linalg.norm(vec)/np.linalg.norm(e1), -1, 1)) #current orienation relative to (1,0)
+
+    vv = v_m + v_s*np.random.randn()
+    dd = np.array([vv*np.sin(ths[t]*np.pi/180), vv*np.cos(ths[t]*np.pi/180)])  #displacement
+    c, s = np.cos(theta), np.sin(theta)
+    R = np.array(((c,s), (-s, c)))  #rotation matrix, changing coordinates
+    dxy = np.dot(R,dd)
+    
+    xs[t] = xs[t-1] + dxy[0]*dt
+    ys[t] = ys[t-1] + dxy[1]*dt
+
+#plt.plot(ths)
+plt.figure()
+plt.plot(xs,ys)
+plt.figure()
+x = np.arange(np.min(xs),np.max(xs),1)
+xx_grad = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50)) #same background environment
+plt.imshow(np.expand_dims(xx_grad,axis=1).T,extent=[np.min(xs),np.max(xs),np.min(ys),np.max(ys)])
+plt.hold(True)
+plt.plot(xs,ys,'white')
 
 #####
 #Generate trajeectories
@@ -117,23 +159,29 @@ for ii in range(20):
     ys = np.zeros(time.shape)  #2D location
     xs[0] = np.random.randn()*0.1
     ys[0] = np.random.randn()*0.1
+    prehist = max(len(K_dc),len(K_dcp))  #pre-histroy length
+    xs[:prehist] = np.random.randn(prehist)
+    ys[:prehist] = np.random.randn(prehist)
     ths = np.zeros(time.shape)  #agle with 1,0
-    ths[0] = np.random.rand()*0
-    dcs = np.zeros(time.shape)
-    dcps = np.zeros(time.shape)
+    ths[:prehist] = np.random.randn(prehist)
+    dxy = np.random.randn(2)
+    dcs = np.zeros((time.shape[0],prehist))
+    dcps = np.zeros((time.shape[0],prehist))
     dths = np.zeros(time.shape)
-    for t in range(1,len(time)):
+    for t in range(prehist,len(time)):
         
-        dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-        dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])      
-        dth = d_theta(alpha, -dc_perp, K, 0, dC)
+        #concentration = gradient(C0,xs[t-1],ys[t-1])
+        #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
+        dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(0,len(K_dc))])
+        #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
+        dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(0,len(K_dcp))])    
+        dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
         ths[t] = ths[t-1] + dth*dt
         
         #data collection
         dcs[t] = dC  #concentration
         dcps[t] = dc_perp  #perpendicular concentration difference
         dths[t] = dth  #theta angle change
-        
         
         e1 = np.array([1,0])
         vec = np.array([xs[t-1],ys[t-1]])
@@ -157,8 +205,10 @@ for ii in range(20):
 
 ###ALL DATA HERE~~
 data_th = np.array(all_th).reshape(-1)
-data_dcp = np.array(all_dc_p).reshape(-1)
-data_dc = np.array(all_dc).reshape(-1)
+#data_dcp = np.array(all_dcp).reshape(-1)
+data_dcp = np.vstack(all_dc)
+#data_dc = np.array(all_dc).reshape(-1)
+data_dc = np.vstack(all_dc_p)    
 
 #####
 #Inference for chemotactic strategy
@@ -166,7 +216,7 @@ data_dc = np.array(all_dc).reshape(-1)
 
 #von Mises distribution test
 d2r = np.pi/180
-vm_par = vonmises.fit((data_th-alpha*data_dcp)*d2r, scale=1)
+vm_par = vonmises.fit((data_th-np.dot(data_dcp,K_dcp))*d2r, scale=1)
 plt.hist(data_th*d2r,bins=100,normed=True);
 plt.hold(True)
 xx = np.linspace(np.min(data_th*d2r),np.max(data_th*d2r),100)
@@ -182,7 +232,7 @@ def nLL(THETA, dth,dcp,dc):
     #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
     #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
     rv = vonmises(k_)#(vm_par[0])
-    VM = rv.pdf((dth-a_*dcp)*d2r)
+    VM = rv.pdf((dth-np.dot(a_,dcp))*d2r)
     marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
     nll = -np.sum(np.log(marginalP+1e-7))#, axis=1)
     #fst = np.einsum('ij,ij->i', 1-P, VM)
@@ -190,7 +240,7 @@ def nLL(THETA, dth,dcp,dc):
     return np.sum(nll)
 
 rv = vonmises(K)
-VM = rv.pdf((data_th-alpha*data_dcp)*d2r)
+VM = rv.pdf((data_th-np.dot(data_dcp,K_dcp))*d2r)
 def nLL2(THETA, VM, dth,dcp,dc):
     A_, B_ = THETA  #inferred paramter
     P = sigmoid2(A_, B_, dcp)
@@ -208,7 +258,7 @@ def sigmoid(a,b,c,d,x):
 
 def sigmoid2(a,b,x):
     #a,b,c,d = p
-    y = a / (1 + np.exp(b*x))
+    y = a / (1 + np.exp(np.dot(b,x)))
     ###Simulated function
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003
     return y
