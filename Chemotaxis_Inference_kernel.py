@@ -289,12 +289,13 @@ theta_fit = res.x
 #theta_fit = res.x
 
 ### checking optimization fits
-plt.plot(theta_fit[2:2+len(K_dc)]/np.linalg.norm(theta_fit[2:2+len(K_dc)]))
+plt.plot(theta_fit[2:2+len(K_dc)]/np.linalg.norm(theta_fit[2:2+len(K_dc)]),label='K_c',linewidth=3)
 plt.hold(True)
-plt.plot(K_dc/np.linalg.norm(K_dc))
-plt.plot(theta_fit[-len(K_dcp):]/np.linalg.norm(theta_fit[-len(K_dcp):]))
-plt.hold(True)
-plt.plot(K_dcp/np.linalg.norm(K_dcp))
+plt.plot(K_dc/np.linalg.norm(K_dc),'--',label='K_c fit',linewidth=3)
+plt.plot(theta_fit[-len(K_dcp)-1:-1]/np.linalg.norm(theta_fit[-len(K_dcp)-1:-1]),'r',label='K_cp',linewidth=3)
+#plt.hold(True)
+plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
+plt.legend()
 
 ###check on von Mises density
 #plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
