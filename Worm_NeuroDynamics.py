@@ -14,6 +14,7 @@ import math
 import csv
 
 
+### loading connectome
 with open("herm_full_edgelist.csv") as f:
     reader = csv.DictReader(f)
     data = [r for r in reader]
@@ -46,8 +47,8 @@ for i in range(0,len(data)):
         AA[xx[0],yy[0]] = float(we)
 
 
-###randomly assign E-I neurons
-ratioI = 0.
+### randomly assign E-I neurons
+ratioI = 0.5
 ins = int(ratioI*ns)
 selected = np.random.choice(ns, ins)
 AA[selected] = -1*AA[selected]
@@ -69,7 +70,8 @@ for ii in range(BB.shape[0]-1,0,-1):
         plt.plot(np.squeeze(temp),np.zeros((np.squeeze(temp)).shape[0])+ii,'b.')
         plt.hold(True)
 
-        
+
+### simulate neural dynamics
 nn = AA.shape[0]
 T = 100
 dt = 0.01
@@ -80,16 +82,21 @@ def NLf(vs,slp,rect):
     vs_NL[vs_NL>rect] = rect
     return vs_NL
 
-slp = 1.
+slp = .5
 rect = 10
 tau = 20
 vs = np.zeros((nn,len(time)))
 vs[:,0] = np.random.randn(nn)
 for t in range(0,len(time)-1):
-#     vs[:,t+1] = vs[:,t] + dt*(-vs[:,t]/tau + NLf(vs[:,t] @ AA,slp,rect) + np.random.randn(ns)*0.5)
-    vs[:,t+1] = vs[:,t] + dt*(-vs[:,t] + (vs[:,t] @ AA)/tau + np.random.randn(ns)*0.5)
-
-   
+    #vs[:,t+1] = vs[:,t] + dt*(-vs[:,t]/tau + NLf(vs[:,t] @ AA,slp,rect) + np.random.randn(ns)*0.5)
+    vs[:,t+1] = vs[:,t] + dt*(-vs[:,t] + (vs[:,t] @ AA)/tau + np.random.randn(ns)*.5)
+    #vs[:,t+1] = vs[:,t] + dt*(-vs[:,t]/tau + (vs[:,t] @ AA)/tau + np.random.randn(ns)*0.5)
+    #vs[:,t+1] = vs[:,t] + dt*(-vs[:,t] + (vs[:,t] @ AA)/tau + np.ones(ns)*1.5)
+    
 plt.plot(time,vs.T);
 plt.xlabel('time',fontsize=20)
 plt.ylabel('activity',fontsize=20)
+
+### ANALYSIS!
+
+

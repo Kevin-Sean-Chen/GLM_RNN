@@ -80,16 +80,17 @@ def dc_measure(dxy,xx,yy):
 dis2targ = 50
 C0 = 0.2
 D = 0.000015
-duT = 60*60*1
+duT = 60*60*3
 d = 0.18
 
 #chemotaxis strategy parameter
-K_win = np.linspace(0,10,10/0.6)
-K_dc = 10*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form)
+K_win = np.linspace(0,6,6/0.6)
+K_dc = 30*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form)
+K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
 #K_dc[np.where(K_dc>0)[0]] = 0
 #K_dc = -np.exp(-K_win/0.5) 
 wv_win = 0.5
-K_dcp = 10*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
+K_dcp = 30*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
 T = 6000
@@ -154,7 +155,7 @@ plt.plot(xs,ys,'white')
 all_dc_p = []
 all_dc = []
 all_th = []
-for ii in range(20):
+for ii in range(25):
     xs = np.zeros(time.shape)
     ys = np.zeros(time.shape)  #2D location
     xs[0] = np.random.randn()*0.1
@@ -226,13 +227,14 @@ plt.plot(xx, rv.pdf(xx),linewidth=3)
 #negative log-likelihood
 def nLL(THETA, dth,dcp,dc):
     #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
-    a_,k_,A_,B_ = THETA
+    #a_,k_,A_,B_ = THETA
+    k_,A_,a_,B_ = THETA[0],THETA[1],THETA[2:2+len(K_dc)],THETA[-len(K_dcp):]
     #P = sigmoid(A_, B_, C_, D_, dcp)
-    P = sigmoid2(A_,B_,dc)
+    P = sigmoid2(A_,a_,dc)
     #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
     #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
     rv = vonmises(k_)#(vm_par[0])
-    VM = rv.pdf((dth-np.dot(a_,dcp))*d2r)
+    VM = rv.pdf((dth-np.dot(dcp,B_))*d2r)
     marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
     nll = -np.sum(np.log(marginalP+1e-7))#, axis=1)
     #fst = np.einsum('ij,ij->i', 1-P, VM)
@@ -258,7 +260,7 @@ def sigmoid(a,b,c,d,x):
 
 def sigmoid2(a,b,x):
     #a,b,c,d = p
-    y = a / (1 + np.exp(np.dot(b,x)))
+    y = a / (1 + np.exp(np.dot(x,b)))
     ###Simulated function
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003
     return y
@@ -272,7 +274,10 @@ def der(THETA):
     return der
 
 #optimize all with less parameters
-theta_guess = 1,1,0.1,100  #,10,0.001  #a_, k_, A_, B_
+#theta_guess = 1, np.random.rand(len(K_dcp)), 0.1, np.random.rand(len(K_dc))   #,10,0.001  #a_, k_, A_, B_
+theta_guess = np.zeros(1+1+len(K_dc)+len(K_dcp))
+theta_guess[0],theta_guess[1],theta_guess[2:2+len(K_dc)],theta_guess[-len(K_dcp):] = \
+1, 0.1, np.random.rand(len(K_dcp)), np.random.rand(len(K_dc))
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
                               #,bounds = ((0,None),(0,None),(None,None),(None,None)))
@@ -283,6 +288,13 @@ theta_fit = res.x
 #res = scipy.optimize.minimize(nLL2,theta_guess,args=(VM,data_th,data_dcp,data_dc),bounds = ((0,None),(0,None)))
 #theta_fit = res.x
 
+### checking optimization fits
+plt.plot(theta_fit[2:2+len(K_dc)]/np.linalg.norm(theta_fit[2:2+len(K_dc)]))
+plt.hold(True)
+plt.plot(K_dc/np.linalg.norm(K_dc))
+plt.plot(theta_fit[-len(K_dcp):]/np.linalg.norm(theta_fit[-len(K_dcp):]))
+plt.hold(True)
+plt.plot(K_dcp/np.linalg.norm(K_dcp))
 
 ###check on von Mises density
 #plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
