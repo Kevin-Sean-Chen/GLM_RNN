@@ -91,7 +91,7 @@ K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
 #K_dc = -np.exp(-K_win/0.5) 
 wv_win = 0.5
 K_dcp = 30*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
-K = 5  #covariance of weathervane
+K = 1  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
 T = 6000
 dt = 0.6  #seconds
@@ -277,7 +277,8 @@ def der(THETA):
 #theta_guess = 1, np.random.rand(len(K_dcp)), 0.1, np.random.rand(len(K_dc))   #,10,0.001  #a_, k_, A_, B_
 theta_guess = np.zeros(1+1+len(K_dc)+len(K_dcp))
 theta_guess[0],theta_guess[1],theta_guess[2:2+len(K_dc)],theta_guess[-len(K_dcp):] = \
-1, 0.1, np.random.rand(len(K_dcp)), np.random.rand(len(K_dc))
+1, 0.1, np.zeros(len(K_dcp)), np.zeros(len(K_dc))
+#np.random.rand(len(K_dcp)), np.random.randn(len(K_dc))
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
                               #,bounds = ((0,None),(0,None),(None,None),(None,None)))
@@ -291,8 +292,8 @@ theta_fit = res.x
 ### checking optimization fits
 plt.plot(theta_fit[2:2+len(K_dc)]/np.linalg.norm(theta_fit[2:2+len(K_dc)]),label='K_c',linewidth=3)
 plt.hold(True)
-plt.plot(K_dc/np.linalg.norm(K_dc),'--',label='K_c fit',linewidth=3)
-plt.plot(theta_fit[-len(K_dcp)-1:-1]/np.linalg.norm(theta_fit[-len(K_dcp)-1:-1]),'r',label='K_cp',linewidth=3)
+plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c fit',linewidth=3)
+plt.plot(theta_fit[-len(K_dcp):]/np.linalg.norm(theta_fit[-len(K_dcp):]),'r',label='K_cp',linewidth=3)
 #plt.hold(True)
 plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
 plt.legend()
