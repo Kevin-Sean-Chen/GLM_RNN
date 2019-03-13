@@ -228,13 +228,18 @@ plt.plot(xx, rv.pdf(xx),linewidth=3)
 def nLL(THETA, dth,dcp,dc):
     #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
     #a_,k_,A_,B_ = THETA
-    k_,A_,a_,B_ = THETA[0],THETA[1],THETA[2:2+len(K_dc)],THETA[-len(K_dcp):]
+    #k_,A_,a_,B_ = THETA[0],THETA[1],THETA[2:2+len(K_dc)],THETA[-len(K_dcp):]
+    k_, A_, B_, a_, = THETA[0], THETA[1], THETA[2], THETA[3:]
     #P = sigmoid(A_, B_, C_, D_, dcp)
+    #a_ = 30*(temporal_kernel(a_exp, K_win))+.0
+    #a_ = a_ - np.mean(a_)
     P = sigmoid2(A_,a_,dc)
     #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
     #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
     rv = vonmises(k_)#(vm_par[0])
-    VM = rv.pdf((dth-np.dot(dcp,B_))*d2r)
+    #B_ = B_exp*np.exp(-K_win/0.5)
+    #VM = rv.pdf((dth-np.dot(dcp,B_))*d2r)
+    VM = rv.pdf((dth-dcp[:,0]*B_)*d2r)
     marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
     nll = -np.sum(np.log(marginalP+1e-7))#, axis=1)
     #fst = np.einsum('ij,ij->i', 1-P, VM)
@@ -275,11 +280,14 @@ def der(THETA):
 
 #optimize all with less parameters
 #theta_guess = 1, np.random.rand(len(K_dcp)), 0.1, np.random.rand(len(K_dc))   #,10,0.001  #a_, k_, A_, B_
-theta_guess = np.zeros(1+1+len(K_dc)+len(K_dcp))
-theta_guess[0],theta_guess[1],theta_guess[2:2+len(K_dc)],theta_guess[-len(K_dcp):] = \
-1, 0.1, np.zeros(len(K_dcp)), np.zeros(len(K_dc))
+#theta_guess = np.zeros(1+1+len(K_dc)+len(K_dcp))
+#theta_guess[0],theta_guess[1],theta_guess[2:2+len(K_dc)],theta_guess[-len(K_dcp):] = \
+#1, 0.1, np.zeros(len(K_dcp)), np.zeros(len(K_dc))
+theta_guess = np.array([1,0.1,10])  #alpha, K, kernal_parameter
+theta_guess = np.concatenate((theta_guess,K_dc))
 #np.random.rand(len(K_dcp)), np.random.randn(len(K_dc))
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
+###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
 res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
                               #,bounds = ((0,None),(0,None),(None,None),(None,None)))
 theta_fit = res.x
@@ -290,20 +298,29 @@ theta_fit = res.x
 #theta_fit = res.x
 
 ### checking optimization fits
-plt.plot(theta_fit[2:2+len(K_dc)]/np.linalg.norm(theta_fit[2:2+len(K_dc)]),label='K_c',linewidth=3)
-plt.hold(True)
-plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c fit',linewidth=3)
-plt.plot(theta_fit[-len(K_dcp):]/np.linalg.norm(theta_fit[-len(K_dcp):]),'r',label='K_cp',linewidth=3)
+#plt.plot(theta_fit[2:2+len(K_dc)]/np.linalg.norm(theta_fit[2:2+len(K_dc)]),label='K_c',linewidth=3)
 #plt.hold(True)
-plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
+#plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c fit',linewidth=3)
+#plt.plot(theta_fit[-len(K_dcp):]/np.linalg.norm(theta_fit[-len(K_dcp):]),'r',label='K_cp',linewidth=3)
+##plt.hold(True)
+#plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
+#plt.legend()
+
+plt.plot(30*(temporal_kernel(theta_fit[2], K_win)),label='K_c_fit',linewidth=3)
+plt.hold(True)
+plt.plot(K_dc,'b--',label='K_c',linewidth=3)
+plt.plot(30*np.exp(-K_win/theta_fit[3]),'r',label='K_cp_fit',linewidth=3)
+#plt.hold(True)
+plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
 plt.legend()
 
+###############################
 ###check on von Mises density
 #plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
-aa,bb = np.histogram((data_th-alpha*data_dcp)*d2r,bins=200)
+aa,bb = np.histogram((data_th-np.dot(data_dcp,temporal_kernel(theta_fit[3],K_win)))*d2r,bins=200)
 plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03)
 plt.hold(True)
-rv = vonmises(res.x[1])
+rv = vonmises(res.x[0])
 #plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
 plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r')
 plt.axis([-1,1,0,0.2])
