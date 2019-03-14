@@ -202,7 +202,7 @@ for ii in range(25):
     all_th.append(dths)  #recording head angle
         
     plt.plot(xs,ys)
-    plt.hold(True)
+    #plt.hold(True)
 
 ###ALL DATA HERE~~
 data_th = np.array(all_th).reshape(-1)
