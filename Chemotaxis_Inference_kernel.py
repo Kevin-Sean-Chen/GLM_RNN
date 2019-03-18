@@ -78,9 +78,9 @@ def dc_measure(dxy,xx,yy):
 
 #gradient environment
 dis2targ = 50
-C0 = 0.2
-D = 0.000015
-duT = 60*60*3
+C0 = 0.2  #initial concentration
+D = 0.000015  #diffusion coefficient
+duT = 60*60*3  #equilibrium time
 d = 0.18
 
 #chemotaxis strategy parameter
@@ -89,7 +89,7 @@ K_dc = 30*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form)
 K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
 #K_dc[np.where(K_dc>0)[0]] = 0
 #K_dc = -np.exp(-K_win/0.5) 
-wv_win = 0.8
+wv_win = 0.5
 K_dcp = 30*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 1  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
@@ -155,7 +155,7 @@ plt.plot(xs,ys,'white')
 all_dc_p = []
 all_dc = []
 all_th = []
-for ii in range(25):
+for ii in range(30):
     xs = np.zeros(time.shape)
     ys = np.zeros(time.shape)  #2D location
     xs[0] = np.random.randn()*0.1
@@ -224,25 +224,38 @@ xx = np.linspace(np.min(data_th*d2r),np.max(data_th*d2r),100)
 rv = vonmises(vm_par[0])
 plt.plot(xx, rv.pdf(xx),linewidth=3)
 
+def RaisedCosine_basis(nkbins,nBases):
+    #nBases = 3
+    #nkbins = 10 #binfun(duration); # number of bins for the basis functions
+    ttb = np.tile(np.arange(0,nkbins),(nBases,1))
+    dbcenter = nkbins / (3 + nBases) # spacing between bumps
+    width = 4*dbcenter # width of each bump
+    bcenters = 1*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
+    def bfun(x,period):
+        return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)
+    temp = ttb - np.tile(bcenters,(nkbins,1)).T
+    BBstm = [bfun(xx,width) for xx in temp] 
+    return np.array(BBstm)
+
 #negative log-likelihood
 def nLL(THETA, dth,dcp,dc):
     #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
-    #a_,k_,A_,B_ = THETA
     #k_,A_,a_,B_ = THETA[0],THETA[1],THETA[2:2+len(K_dc)],THETA[-len(K_dcp):]
-    k_, A_, B_, = THETA[0], THETA[1], THETA[2]#, THETA[3:]
+    k_, A_, B_, = THETA[0], THETA[1], THETA[2:]#, THETA[3:]
     #P = sigmoid(A_, B_, C_, D_, dcp)
     #a_ = 30*(temporal_kernel(a_exp, K_win))+.0
     #a_ = a_ - np.mean(a_)
-    B_ = 10*np.exp(-K_win/B_)
-    P = sigmoid2(A_,K_dc,dc)
+    #B_ = 10*np.exp(-K_win/B_)
+    B_ = np.dot(B_,RaisedCosine_basis(len(K_win),len(THETA)-2))  #test with basis function
+    P = sigmoid2(A_,B_,dc)
     #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
     #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
     rv = vonmises(k_)#(vm_par[0])
     #B_ = B_exp*np.exp(-K_win/0.5)
-    VM = rv.pdf((dth-np.dot(dcp,B_))*d2r)
+    VM = rv.pdf((dth-np.dot(dcp,K_dcp))*d2r)
     #VM = rv.pdf((dth-dcp[:,0]*B_)*d2r)
     marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
-    nll = -np.sum(np.log(marginalP+1e-7))#, axis=1)
+    nll = -np.sum(np.log(marginalP+1e-8))#, axis=1)
     #fst = np.einsum('ij,ij->i', 1-P, VM)
     #snd = np.sum(1/np.pi*P, axis=1)
     return np.sum(nll)
@@ -284,8 +297,8 @@ def der(THETA):
 #theta_guess = np.zeros(1+1+len(K_dc)+len(K_dcp))
 #theta_guess[0],theta_guess[1],theta_guess[2:2+len(K_dc)],theta_guess[-len(K_dcp):] = \
 #1, 0.1, np.zeros(len(K_dcp)), np.zeros(len(K_dc))
-theta_guess = np.array([1,0.1,0.5])  #alpha, K, kernal_parameter
-#theta_guess = np.concatenate((theta_guess,np.random.randn(len(K_dc))))
+theta_guess = np.array([700,0.1])  #Kappa, A, kernal_parameter
+theta_guess = np.concatenate((theta_guess,np.random.randn(len(K_dc)-3)))
 #theta_guess = np.concatenate((theta_guess, K_dcp))
 #np.random.rand(len(K_dcp)), np.random.randn(len(K_dc))
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
