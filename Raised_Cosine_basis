@@ -34,7 +34,7 @@ ttb = np.tile(np.arange(0,nkbins),(nBases,1))
 #    % width of the cosine
 dbcenter = nkbins / (3 + nBases) # spacing between bumps
 width = 4*dbcenter # width of each bump
-bcenters = 1*dbcenter + dbcenter*np.arange(0,nBases)
+bcenters = 2*dbcenter + dbcenter*np.arange(0,nBases)
 # location of each bump centers
 # bcenters = round(bcenters); % round to closest ms <-- BAD!!! NEVER DO THIS
 def bfun(x,period):

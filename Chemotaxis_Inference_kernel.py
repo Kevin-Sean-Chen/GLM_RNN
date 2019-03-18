@@ -85,15 +85,15 @@ d = 0.18
 
 #chemotaxis strategy parameter
 K_win = np.linspace(0,6,6/0.6)
-K_dc = 30*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form)
-K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
-#K_dc[np.where(K_dc>0)[0]] = 0
+K_dc = 30*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form, difference of two gammas)
+#K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
+#K_dc[np.where(K_dc>0)[0]] = 0  #rectification of the kernel
 #K_dc = -np.exp(-K_win/0.5) 
 wv_win = 0.5
 K_dcp = 30*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
-K = 1  #covariance of weathervane
+K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
-T = 6000
+T = 5000
 dt = 0.6  #seconds
 v_m = 0.12  #mm/s
 v_s = 0.01  #std of speed
@@ -207,9 +207,9 @@ for ii in range(30):
 ###ALL DATA HERE~~
 data_th = np.array(all_th).reshape(-1)
 #data_dcp = np.array(all_dcp).reshape(-1)
-data_dcp = np.vstack(all_dc)
+data_dcp = np.vstack(all_dc_p)
 #data_dc = np.array(all_dc).reshape(-1)
-data_dc = np.vstack(all_dc_p)    
+data_dc = np.vstack(all_dc)    
 
 #####
 #Inference for chemotactic strategy
@@ -242,11 +242,11 @@ def nLL(THETA, dth,dcp,dc):
     #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
     #k_,A_,a_,B_ = THETA[0],THETA[1],THETA[2:2+len(K_dc)],THETA[-len(K_dcp):]
     k_, A_, B_, = THETA[0], THETA[1], THETA[2:]#, THETA[3:]
-    #P = sigmoid(A_, B_, C_, D_, dcp)
     #a_ = 30*(temporal_kernel(a_exp, K_win))+.0
     #a_ = a_ - np.mean(a_)
     #B_ = 10*np.exp(-K_win/B_)
     B_ = np.dot(B_,RaisedCosine_basis(len(K_win),len(THETA)-2))  #test with basis function
+    #P = sigmoid(A_, B_, C_, D_, dcp)
     P = sigmoid2(A_,B_,dc)
     #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
     #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
@@ -333,7 +333,7 @@ plt.legend()
 ###############################
 ###check on von Mises density
 #plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
-aa,bb = np.histogram((data_th-np.dot(data_dcp,K_dc))*d2r,bins=200)
+aa,bb = np.histogram((data_th-np.dot(data_dcp,K_dcp))*d2r,bins=200)
 plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03)
 plt.hold(True)
 rv = vonmises(res.x[0])
