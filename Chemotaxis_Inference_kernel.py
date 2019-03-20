@@ -115,9 +115,9 @@ for t in range(prehist,len(time)):
     
     #concentration = gradient(C0,xs[t-1],ys[t-1])
     #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(0,len(K_dc))])
+    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+1)])
     #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(0,len(K_dcp))])    
+    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
     dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
     ths[t] = ths[t-1] + dth*dt
     
@@ -173,9 +173,9 @@ for ii in range(50):
         
         #concentration = gradient(C0,xs[t-1],ys[t-1])
         #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-        dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(0,len(K_dc))])
+        dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+1)])
         #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-        dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(0,len(K_dcp))])    
+        dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
         dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
         ths[t] = ths[t-1] + dth*dt
         
@@ -215,7 +215,7 @@ data_dc = np.vstack(all_dc)
 #Inference for chemotactic strategy
 #####
 
-#von Mises distribution test
+#von Mises distribution test (without full-model fitting)
 d2r = np.pi/180
 vm_par = vonmises.fit((data_th-np.dot(data_dcp,K_dcp))*d2r, scale=1)
 plt.hist(data_th*d2r,bins=100,normed=True);
@@ -320,7 +320,9 @@ theta_fit = res.x
 
 
 ### check kernel forms
-plt.plot(np.dot(theta_fit[3:],RaisedCosine_basis(10,len(theta_guess)-3)))
+reconK = np.dot(theta_fit[3:],RaisedCosine_basis(10,len(theta_guess)-3))
+plt.plot(reconK/np.linalg.norm(reconK))
+plt.plot(K_dc/np.linalg.norm(K_dc))
 
 ### checking optimization fits
 #plt.plot(theta_fit[2:2+len(K_dc)]/np.linalg.norm(theta_fit[2:2+len(K_dc)]),label='K_c',linewidth=3)
