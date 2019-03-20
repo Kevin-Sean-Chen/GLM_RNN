@@ -231,10 +231,11 @@ def RaisedCosine_basis(nkbins,nBases):
     """
     #nBases = 3
     #nkbins = 10 #binfun(duration); # number of bins for the basis functions
-    ttb = np.tile(np.log(np.arange(0,nkbins)+1)/np.log(1.5),(nBases,1))  #take log for nonlinear time
+    #ttb = np.tile(np.log(np.arange(0,nkbins)+1)/np.log(1.5),(nBases,1))  #take log for nonlinear time
+    ttb = np.tile(np.arange(0,nkbins),(nBases,1))
     dbcenter = nkbins / (nBases+3) # spacing between bumps
     width = 4*dbcenter # width of each bump
-    bcenters = 2.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
+    bcenters = 1.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
     def bfun(x,period):
         return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)
     temp = ttb - np.tile(bcenters,(nkbins,1)).T
@@ -305,7 +306,7 @@ def der(THETA):
 #theta_guess[0],theta_guess[1],theta_guess[2:2+len(K_dc)],theta_guess[-len(K_dcp):] = \
 #1, 0.1, np.zeros(len(K_dcp)), np.zeros(len(K_dc))
 theta_guess = np.array([100,0.1,0.5])  #Kappa, A, kernal_parameter
-theta_guess = np.concatenate((theta_guess,np.random.randn(len(K_dc)-5)))  #the remaining parameters for weighted basis
+theta_guess = np.concatenate((theta_guess,np.random.randn(len(K_dc)-4)))  #the remaining parameters for weighted basis
 #theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 ###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
