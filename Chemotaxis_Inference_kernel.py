@@ -85,12 +85,12 @@ d = 0.18
 
 #chemotaxis strategy parameter
 K_win = np.linspace(0,6,6/0.6)
-K_dc = 30*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form, difference of two gammas)
+K_dc = 50*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form, difference of two gammas)
 #K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
 #K_dc[np.where(K_dc>0)[0]] = 0  #rectification of the kernel
 #K_dc = -np.exp(-K_win/0.5) 
 wv_win = 0.5
-K_dcp = 30*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
+K_dcp = 50*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
 T = 5000
@@ -155,7 +155,7 @@ plt.plot(xs,ys,'white')
 all_dc_p = []
 all_dc = []
 all_th = []
-for ii in range(30):
+for ii in range(50):
     xs = np.zeros(time.shape)
     ys = np.zeros(time.shape)  #2D location
     xs[0] = np.random.randn()*0.1
@@ -225,34 +225,43 @@ rv = vonmises(vm_par[0])
 plt.plot(xx, rv.pdf(xx),linewidth=3)
 
 def RaisedCosine_basis(nkbins,nBases):
+    """
+    Raised cosine basis function to tile the time course of the response kernel
+    nkbins of time points in the kernel and nBases for the number of basis functions
+    """
     #nBases = 3
     #nkbins = 10 #binfun(duration); # number of bins for the basis functions
-    ttb = np.tile(np.arange(0,nkbins),(nBases,1))
-    dbcenter = nkbins / (3 + nBases) # spacing between bumps
+    ttb = np.tile(np.log(np.arange(0,nkbins)+1)/np.log(1.5),(nBases,1))  #take log for nonlinear time
+    dbcenter = nkbins / (nBases+3) # spacing between bumps
     width = 4*dbcenter # width of each bump
-    bcenters = 1*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
+    bcenters = 2.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
     def bfun(x,period):
         return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)
     temp = ttb - np.tile(bcenters,(nkbins,1)).T
     BBstm = [bfun(xx,width) for xx in temp] 
+    #plt.plot(np.array(BBstm).T)
     return np.array(BBstm)
 
 #negative log-likelihood
 def nLL(THETA, dth,dcp,dc):
+    """
+    negative log-likelihood objective function for fitting
+    THETA includes parameter to be inferred and dth, dcp, dc are from recorded data
+    """
     #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
     #k_,A_,a_,B_ = THETA[0],THETA[1],THETA[2:2+len(K_dc)],THETA[-len(K_dcp):]
-    k_, A_, B_, = THETA[0], THETA[1], THETA[2:]#, THETA[3:]
+    k_, A_, tau, B_, = THETA[0], THETA[1], THETA[2], THETA[3:]#
     #a_ = 30*(temporal_kernel(a_exp, K_win))+.0
     #a_ = a_ - np.mean(a_)
     #B_ = 10*np.exp(-K_win/B_)
-    B_ = np.dot(B_,RaisedCosine_basis(len(K_win),len(THETA)-2))  #test with basis function
+    B_ = np.dot(B_,RaisedCosine_basis(len(K_win),len(THETA)-3))  #test with basis function
     #P = sigmoid(A_, B_, C_, D_, dcp)
     P = sigmoid2(A_,B_,dc)
     #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
     #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
     rv = vonmises(k_)#(vm_par[0])
-    #B_ = B_exp*np.exp(-K_win/0.5)
-    VM = rv.pdf((dth-np.dot(dcp,K_dcp))*d2r)
+    Kdcp = 30*np.exp(-K_win/tau)
+    VM = rv.pdf((dth-np.dot(dcp,Kdcp))*d2r)
     #VM = rv.pdf((dth-dcp[:,0]*B_)*d2r)
     marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
     nll = -np.sum(np.log(marginalP+1e-8))#, axis=1)
@@ -293,14 +302,11 @@ def der(THETA):
     return der
 
 #optimize all with less parameters
-#theta_guess = 1, np.random.rand(len(K_dcp)), 0.1, np.random.rand(len(K_dc))   #,10,0.001  #a_, k_, A_, B_
-#theta_guess = np.zeros(1+1+len(K_dc)+len(K_dcp))
 #theta_guess[0],theta_guess[1],theta_guess[2:2+len(K_dc)],theta_guess[-len(K_dcp):] = \
 #1, 0.1, np.zeros(len(K_dcp)), np.zeros(len(K_dc))
-theta_guess = np.array([700,0.1])  #Kappa, A, kernal_parameter
-theta_guess = np.concatenate((theta_guess,np.random.randn(len(K_dc)-3)))
-#theta_guess = np.concatenate((theta_guess, K_dcp))
-#np.random.rand(len(K_dcp)), np.random.randn(len(K_dc))
+theta_guess = np.array([100,0.1,0.5])  #Kappa, A, kernal_parameter
+theta_guess = np.concatenate((theta_guess,np.random.randn(len(K_dc)-5)))  #the remaining parameters for weighted basis
+#theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 ###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
 res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
@@ -313,6 +319,9 @@ theta_fit = res.x
 #theta_fit = res.x
 
 
+### check kernel forms
+plt.plot(np.dot(theta_fit[3:],RaisedCosine_basis(10,len(theta_guess)-3)))
+
 ### checking optimization fits
 #plt.plot(theta_fit[2:2+len(K_dc)]/np.linalg.norm(theta_fit[2:2+len(K_dc)]),label='K_c',linewidth=3)
 #plt.hold(True)
@@ -322,12 +331,21 @@ theta_fit = res.x
 #plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
 #plt.legend()
 
-plt.plot(30*(temporal_kernel(theta_fit[2], K_win)),label='K_c_fit',linewidth=3)
-plt.hold(True)
-plt.plot(K_dc,'b--',label='K_c',linewidth=3)
-plt.plot(30*np.exp(-K_win/theta_fit[3]),'r',label='K_cp_fit',linewidth=3)
+#plt.plot(30*(temporal_kernel(theta_fit[2], K_win)),label='K_c_fit',linewidth=3)
 #plt.hold(True)
-plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
+#plt.plot(K_dc,'b--',label='K_c',linewidth=3)
+#plt.plot(30*np.exp(-K_win/theta_fit[3]),'r',label='K_cp_fit',linewidth=3)
+##plt.hold(True)
+#plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
+#plt.legend()
+
+temp = np.dot(theta_fit[2:],RaisedCosine_basis(10,len(theta_guess)-2))
+plt.plot(temp/np.linalg.norm(temp),label='K_c_fit',linewidth=3)
+plt.hold(True)
+plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c',linewidth=3)
+plt.plot(np.exp(-K_win/theta_fit[3]),'r',label='K_cp_fit',linewidth=3)
+#plt.hold(True)
+plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
 plt.legend()
 
 ###############################
@@ -359,18 +377,4 @@ plt.grid(True)
 plt.legend()
 
 ### step-wise fitting
-#aa,bb = np.histogram(data_dc,bins=10)
-#dC_bin = []
-#for i in range(0,len(bb)-1):
-#    pos = np.where((data_dc>bb[i]) & (data_dc<=bb[i+1]))[0]
-#    dC_bin.append(pos)
-#def nLL3(THETA, dth,dcp):
-#    a_, k_, p_ = THETA  #inferred paramter
-#    rv = vonmises(k_)
-#    VM = rv.pdf((dth-a_*dcp)*d2r)
-#    marginalP = np.multiply((1-p_), VM) + (1/(2*np.pi))*p_
-#    nll = -np.sum(np.log(marginalP+1e-7))
-#    return np.sum(nll)
-#theta_guess = np.array([10,10,0.1])
-#res = scipy.optimize.minimize(nLL3,theta_guess,args=(data_th,data_dcp),bounds = ((None, None), (0,None),(0,1)))
-#theta_fit = res.x
+#...
