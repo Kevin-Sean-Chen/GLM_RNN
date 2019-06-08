@@ -221,7 +221,7 @@ vm_par = vonmises.fit((data_th-np.dot(data_dcp,K_dcp))*d2r, scale=1)
 plt.hist(data_th*d2r,bins=100,normed=True);
 plt.hold(True)
 xx = np.linspace(np.min(data_th*d2r),np.max(data_th*d2r),100)
-rv = vonmises(vm_par[0])
+rv = vonmises(1/theta_fit[0]**0.5)#(vm_par[0])
 plt.plot(xx, rv.pdf(xx),linewidth=3)
 
 def RaisedCosine_basis(nkbins,nBases):
@@ -235,7 +235,7 @@ def RaisedCosine_basis(nkbins,nBases):
     ttb = np.tile(np.arange(0,nkbins),(nBases,1))
     dbcenter = nkbins / (nBases+3) # spacing between bumps
     width = 4*dbcenter # width of each bump
-    bcenters = 1.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
+    bcenters = 2.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
     def bfun(x,period):
         return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)
     temp = ttb - np.tile(bcenters,(nkbins,1)).T
