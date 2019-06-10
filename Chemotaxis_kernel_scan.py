@@ -81,10 +81,12 @@ def generate_chemotaxis(Ww,Wp,rep):
     measure distance to target and sum of odor
     """
     K_win = np.linspace(0,6,6/0.6)
-    K_dc = Wp*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form)
+    #K_dc = Wp*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form)
+    K_dc = 30*(temporal_kernel(Wp,K_win))+.0
     K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
-    wv_win = 0.8
-    K_dcp = Ww*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
+    #wv_win = 0.8
+    #K_dcp = Ww*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
+    K_dcp = 30*np.exp(-K_win/Ww)
     
     xs = np.zeros(time.shape)
     ys = np.zeros(time.shape)  #2D location
@@ -173,8 +175,10 @@ time = np.arange(0,T*dt,dt)
 
 ###scanning parameters
 rep = 30
-Wws = np.arange(1,55,5)
-Wps = np.arange(1,55,5)
+#Wws = np.arange(1,55,5)
+Wws = np.arange(0.1,2,0.2)
+#Wps = np.arange(1,55,5)
+Wps = np.arange(1,11,1)
 all_final = []
 all_dc = []
 all_dcp = []
