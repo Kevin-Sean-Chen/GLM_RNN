@@ -81,7 +81,7 @@ dis2targ = 50
 C0 = 0.2  #initial concentration
 D = 0.000015  #diffusion coefficient
 duT = 60*60*3  #equilibrium time
-d = 0.18
+d = 0.18  #diffusion ciefficient
 
 #chemotaxis strategy parameter
 K_win = np.linspace(0,6,6/0.6)
@@ -219,7 +219,7 @@ def generate_traj(NN):
 #####
 
 #von Mises distribution test (without full-model fitting)
-#d2r = np.pi/180
+d2r = np.pi/180
 #vm_par = vonmises.fit((data_th-np.dot(data_dcp,K_dcp))*d2r, scale=1)
 #plt.hist(data_th*d2r,bins=100,normed=True);
 ##plt.hold(True)
@@ -308,7 +308,7 @@ def der(THETA):
     return der
 
 ###generating data
-data_th, data_dcp, data_dc = generate_traj(100)
+data_th, data_dcp, data_dc = generate_traj(20)
 #optimize all with less parameters
 #theta_guess[0],theta_guess[1],theta_guess[2:2+len(K_dc)],theta_guess[-len(K_dcp):] = \
 #1, 0.1, np.zeros(len(K_dcp)), np.zeros(len(K_dc))
@@ -330,9 +330,13 @@ theta_fit = res.x
 
 
 ### check kernel forms
-reconK = np.dot(theta_fit[3:],RaisedCosine_basis(len(K_dc),len(theta_guess)-3))
+reconK = np.dot(theta_fit[2:7],RaisedCosine_basis(len(K_dc),5))
 plt.plot(reconK/np.linalg.norm(reconK))
 plt.plot(K_dc/np.linalg.norm(K_dc))
+plt.figure()
+reconK = np.dot(theta_fit[8:],RaisedCosine_basis(len(K_dcp),5))
+plt.plot(reconK/np.linalg.norm(reconK))
+plt.plot(K_dcp/np.linalg.norm(K_dcp))
 
 
 ### more repetition ###
@@ -351,7 +355,6 @@ for sim in range(10):  #repeat simulation
         allest.append(reconK)  #storing all reconstructed kernels
         tt = tt+1
         print(tt)
-
 k = [i/np.linalg.norm(i) for i in allest]
 plt.errorbar(range(10),np.mean(k,axis=0),yerr=np.std(k,axis=0))
 ### checking optimization fits
@@ -371,21 +374,21 @@ plt.errorbar(range(10),np.mean(k,axis=0),yerr=np.std(k,axis=0))
 #plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
 #plt.legend()
 
-temp = np.dot(theta_fit[2:],RaisedCosine_basis(10,len(theta_guess)-2))
-plt.plot(temp/np.linalg.norm(temp),label='K_c_fit',linewidth=3)
-plt.hold(True)
-plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c',linewidth=3)
-plt.plot(np.exp(-K_win/theta_fit[3]),'r',label='K_cp_fit',linewidth=3)
+#temp = np.dot(theta_fit[2:],RaisedCosine_basis(10,len(theta_guess)-2))
+#plt.plot(temp/np.linalg.norm(temp),label='K_c_fit',linewidth=3)
 #plt.hold(True)
-plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
-plt.legend()
+#plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c',linewidth=3)
+#plt.plot(np.exp(-K_win/theta_fit[3]),'r',label='K_cp_fit',linewidth=3)
+##plt.hold(True)
+#plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
+#plt.legend()
 
 ###############################
 ###check on von Mises density
 #plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
 aa,bb = np.histogram((data_th-np.dot(data_dcp,K_dcp))*d2r,bins=200)
 plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03)
-plt.hold(True)
+#plt.hold(True)
 rv = vonmises(res.x[0])
 #plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
 plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r')
@@ -397,10 +400,10 @@ print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
 
 ###check on logistic fitting
 xp = np.linspace(-0.5, 0.5, 1000)
-pxp=sigmoid2(res.x[2],res.x[3],xp)
+pxp=sigmoid2(res.x[2],np.dot(theta_fit[2:7],RaisedCosine_basis(len(K_dc),5)),data_dc)
 #pxp=sigmoid1(res.x[2],res.x[3],res.x[4],res.x[5],xp)
 plt.plot(xp,pxp,'-',linewidth=3,label='fit')
-plt.hold(True)
+#plt.hold(True)
 plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.5)
 #plt.plot(xp,sigmoid1(0.023,0.4,140/0.6,0.003,xp),linewidth=3,label='ground-truth')
 plt.xlabel('x')
