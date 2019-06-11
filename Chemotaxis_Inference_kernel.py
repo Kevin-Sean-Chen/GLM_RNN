@@ -71,7 +71,7 @@ def dc_measure(dxy,xx,yy):
     """
     perpendicular concentration measure
     """
-    perp_dir = np.array([-dxy[1], dxy[0]])
+    perp_dir = np.array([-dxy[1], dxy[0]])  #perpdendicular direction
     perp_dir = perp_dir/np.linalg.norm(perp_dir)
     perp_dC = gradient(C0, xx+perp_dir[0], yy+perp_dir[1]) - gradient(C0, xx-perp_dir[0], yy-perp_dir[1])
     return perp_dC
@@ -79,21 +79,22 @@ def dc_measure(dxy,xx,yy):
 #gradient environment
 dis2targ = 50
 C0 = 0.2  #initial concentration
-D = 0.000015  #diffusion coefficient
+D = 0.000015  #diffusion coefficient (for a reasonable simulation environment)
 duT = 60*60*3  #equilibrium time
-d = 0.18  #diffusion ciefficient
+d = 0.18  #difussion coefficient of butanone...
 
 #chemotaxis strategy parameter
 K_win = np.linspace(0,6,6/0.6)
-K_dc = 50*(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form, difference of two gammas)
+scaf = 50  #scale factor
+K_dc = scaf *(temporal_kernel(4.,K_win))+.0  #random-turning kernel (biphasic form, difference of two gammas)
 #K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
 #K_dc[np.where(K_dc>0)[0]] = 0  #rectification of the kernel
 #K_dc = -np.exp(-K_win/0.5) 
 wv_win = 0.5
-K_dcp = 50*np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
+K_dcp = scaf *np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
-T = 5000
+T = 5000  #whole duration of steps
 dt = 0.6  #seconds
 v_m = 0.12  #mm/s
 v_s = 0.01  #std of speed
@@ -115,9 +116,12 @@ for t in range(prehist,len(time)):
     
     #concentration = gradient(C0,xs[t-1],ys[t-1])
     #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+1)])
+    #dC = np.array([gradient(C0, xs[t-past],ys[t-past])-gradient(C0, xs[t],ys[t]) for past in range(0,len(K_dc))])
+    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(0,len(K_dc))])
+    #dC = np.flip(dC)
+    #dC = np.diff(dC)  #change in concentration!!
     #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
+    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(0,len(K_dcp))])    
     dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
     ths[t] = ths[t-1] + dth*dt
     
@@ -174,9 +178,12 @@ def generate_traj(NN):
             
             #concentration = gradient(C0,xs[t-1],ys[t-1])
             #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-            dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+1)])
+            #dC = np.array([gradient(C0, xs[t-past],ys[t-past])-gradient(C0, xs[t],ys[t]) for past in range(0,len(K_dc))])
+            dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(0,len(K_dc))])
+            #dC = np.flip(dC)
+            #dC = np.diff(dC)  #change in concentration!!
             #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
+            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(0,len(K_dcp))])    
             dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
             ths[t] = ths[t-1] + dth*dt
             
@@ -202,8 +209,7 @@ def generate_traj(NN):
         all_dc.append(dcs)  #recording dC
         all_th.append(dths)  #recording head angle
             
-        #plt.plot(xs,ys)
-        #plt.hold(True)
+        ## plt.plot(xs,ys)
     
     ###ALL DATA HERE~~
     data_th = np.array(all_th).reshape(-1)
@@ -214,6 +220,7 @@ def generate_traj(NN):
     
     return data_th, data_dcp, data_dc
 
+
 #####
 #Inference for chemotactic strategy
 #####
@@ -222,9 +229,9 @@ def generate_traj(NN):
 d2r = np.pi/180
 #vm_par = vonmises.fit((data_th-np.dot(data_dcp,K_dcp))*d2r, scale=1)
 #plt.hist(data_th*d2r,bins=100,normed=True);
-##plt.hold(True)
+#plt.hold(True)
 #xx = np.linspace(np.min(data_th*d2r),np.max(data_th*d2r),100)
-#rv = vonmises(vm_par[0])
+#rv = vonmises(1/theta_fit[0]**0.5)#(vm_par[0])
 #plt.plot(xx, rv.pdf(xx),linewidth=3)
 
 def RaisedCosine_basis(nkbins,nBases):
@@ -238,7 +245,7 @@ def RaisedCosine_basis(nkbins,nBases):
     #ttb = np.tile(np.arange(0,nkbins),(nBases,1))
     dbcenter = nkbins / (nBases+3) # spacing between bumps
     width = 4*dbcenter # width of each bump
-    bcenters = 1.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
+    bcenters = 2.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
     def bfun(x,period):
         return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)
     temp = ttb - np.tile(bcenters,(nkbins,1)).T
@@ -253,24 +260,17 @@ def nLL(THETA, dth,dcp,dc):
     THETA includes parameter to be inferred and dth, dcp, dc are from recorded data
     """
     #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
-    #k_,A_,a_,B_ = THETA[0],THETA[1],THETA[2:2+len(K_dc)],THETA[-len(K_dcp):]
-    #k_, A_, tau, B_, = THETA[0], THETA[1], THETA[2], THETA[3:]#
-    k_, A_, C_, B_, = THETA[0], THETA[1], THETA[2:7], THETA[8:]#
-    #a_ = 30*(temporal_kernel(a_exp, K_win))+.0
-    #a_ = a_ - np.mean(a_)
-    #B_ = 10*np.exp(-K_win/B_)
-    B_ = np.dot(B_,RaisedCosine_basis(len(K_win),5))  #test with basis function
-    C_ = np.dot(C_,RaisedCosine_basis(len(K_win),5))
+    k_, A_, B_, C_,Bamp = THETA[0], THETA[1], THETA[2:7], THETA[7], THETA[8]#, THETA[9] #Kappa,A,Kdc,Kdcp,dc_amp,dcp_amp
+    B_ = Bamp *np.dot(B_,RaisedCosine_basis(len(K_win),5))  #test with basis function
     #P = sigmoid(A_, B_, C_, D_, dcp)
     P = sigmoid2(A_,B_,dc)
     #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
     #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
     rv = vonmises(k_)#(vm_par[0])
-    #Kdcp = 30*np.exp(-K_win/tau)
+    C_ = scaf *np.exp(-K_win/C_)
     VM = rv.pdf((dth-np.dot(dcp,C_))*d2r)
-    #VM = rv.pdf((dth-dcp[:,0]*B_)*d2r)
     marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
-    nll = -np.sum(np.log(marginalP+1e-8))#, axis=1)
+    nll = -np.sum(np.log(marginalP+1e-9))#, axis=1)
     #fst = np.einsum('ij,ij->i', 1-P, VM)
     #snd = np.sum(1/np.pi*P, axis=1)
     return np.sum(nll)
@@ -294,7 +294,7 @@ def sigmoid(a,b,c,d,x):
 
 def sigmoid2(a,b,x):
     #a,b,c,d = p
-    y = a / (1 + np.exp(np.dot(x,b)))
+    y = a / (1 + np.exp(np.dot(x,b/dt)))
     ###Simulated function
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003
     return y
@@ -308,14 +308,12 @@ def der(THETA):
     return der
 
 ###generating data
-data_th, data_dcp, data_dc = generate_traj(20)
+data_th, data_dcp, data_dc = generate_traj(50)
 #optimize all with less parameters
-#theta_guess[0],theta_guess[1],theta_guess[2:2+len(K_dc)],theta_guess[-len(K_dcp):] = \
-#1, 0.1, np.zeros(len(K_dcp)), np.zeros(len(K_dc))
-theta_guess = np.array([100,0.1,0.5])  #Kappa, A, kernal_parameter
-#theta_guess = np.concatenate((theta_guess,np.random.randn(len(K_dc)-7)))  #the remaining parameters for weighted basis
-theta_guess = np.concatenate((theta_guess,np.random.randn(5)))
-theta_guess = np.concatenate((theta_guess,np.random.randn(5)))
+theta_guess = np.array([100,0.1])  #Kappa, A
+theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
+# theta_guess = np.concatenate((theta_guess,np.random.randn(5)))
+theta_guess = np.concatenate((theta_guess,np.array([0.5,50])))  #tau,dc_amp,dcp_amp
 #theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 ###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
@@ -323,20 +321,23 @@ res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),me
                               #,bounds = ((0,None),(0,None),(None,None),(None,None)))
 theta_fit = res.x
 ##optimize logistic
-#theta_guess = 1,0.5  #a_, k_, A_, B_, C_, D_
 ####Ground Truth: 25,5,0.023,0.4,40,0.003
 #res = scipy.optimize.minimize(nLL2,theta_guess,args=(VM,data_th,data_dcp,data_dc),bounds = ((0,None),(0,None)))
-#theta_fit = res.x
 
 
-### check kernel forms
-reconK = np.dot(theta_fit[2:7],RaisedCosine_basis(len(K_dc),5))
-plt.plot(reconK/np.linalg.norm(reconK))
-plt.plot(K_dc/np.linalg.norm(K_dc))
-plt.figure()
-reconK = np.dot(theta_fit[8:],RaisedCosine_basis(len(K_dcp),5))
-plt.plot(reconK/np.linalg.norm(reconK))
-plt.plot(K_dcp/np.linalg.norm(K_dcp))
+### check kernel forms!!
+fit_par = theta_fit[2:7]
+recKdc = np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
+recKdc = recKdc/np.linalg.norm(recKdc)
+plt.plot(recKdc,'b',label='K_c_fit',linewidth=3)
+plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c',linewidth=3)  #compare form with normalized real kernel
+fit_par2 = theta_fit[7]  #single exponent fit
+# recKdcp = np.dot(fit_par2,RaisedCosine_basis(len(K_dcp),len(fit_par2)))  #for basis functions
+recKdcp = np.exp(-K_win/theta_fit[7])
+plt.plot(recKdcp/np.linalg.norm(recKdcp),'r',label='K_cp_fit',linewidth=3)
+#plt.hold(True)
+plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
+plt.legend()
 
 
 ### more repetition ###
@@ -374,21 +375,13 @@ plt.errorbar(range(10),np.mean(k,axis=0),yerr=np.std(k,axis=0))
 #plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
 #plt.legend()
 
-#temp = np.dot(theta_fit[2:],RaisedCosine_basis(10,len(theta_guess)-2))
-#plt.plot(temp/np.linalg.norm(temp),label='K_c_fit',linewidth=3)
-#plt.hold(True)
-#plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c',linewidth=3)
-#plt.plot(np.exp(-K_win/theta_fit[3]),'r',label='K_cp_fit',linewidth=3)
-##plt.hold(True)
-#plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
-#plt.legend()
 
 ###############################
-###check on von Mises density
+### check on von Mises density
 #plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
-aa,bb = np.histogram((data_th-np.dot(data_dcp,K_dcp))*d2r,bins=200)
+aa,bb = np.histogram((data_th-np.dot(data_dcp,recKdcp))*d2r,bins=200)
 plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03)
-#plt.hold(True)
+
 rv = vonmises(res.x[0])
 #plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
 plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r')
@@ -398,13 +391,22 @@ plt.axis([-.5,.5,0,0.5])
 print('sum of histogram:',np.sum(aa/len(data_th)))
 print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
 
-###check on logistic fitting
+### check on logistic fitting
 xp = np.linspace(-0.5, 0.5, 1000)
 pxp=sigmoid2(res.x[2],np.dot(theta_fit[2:7],RaisedCosine_basis(len(K_dc),5)),data_dc)
 #pxp=sigmoid1(res.x[2],res.x[3],res.x[4],res.x[5],xp)
 plt.plot(xp,pxp,'-',linewidth=3,label='fit')
 #plt.hold(True)
 plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.5)
+#rescl = max(K_dc)/max(recKdc)  #use this before learning the scale factor...
+rescl = theta_fit[-1]
+conv_dc1 = np.dot(recKdc*rescl,data_dc.T)
+pxp = sigmoid2(theta_fit[1],recKdc*rescl,data_dc)
+#pxp=sigmoid1(res.x[2],res.x[3],res.x[4],res.x[5],xp)
+plt.plot(conv_dc1,pxp,'o',linewidth=3,label='fit')
+#plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.5)
+conv_dc = np.dot(K_dc,data_dc.T)
+plt.plot(conv_dc, sigmoid2(5*0.023, K_dc,data_dc),'o',linewidth=5,label='ground-truth',alpha=0.5)
 #plt.plot(xp,sigmoid1(0.023,0.4,140/0.6,0.003,xp),linewidth=3,label='ground-truth')
 plt.xlabel('x')
 plt.ylabel('y',rotation='horizontal') 
