@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Jan 29 15:50:11 2019
+Created on Wed Jul  3 11:21:48 2019
 
 @author: kschen
 """
@@ -14,7 +14,6 @@ import math
 import scipy.optimize   #for log-likelihood
 from scipy.special import iv  #for Bessel function
 from scipy.stats import vonmises  #for von Mises distribution
-
 
 #incoporate the temporal kernel for chemo-sensing
 def temporal_kernel(alpha,tau):
@@ -121,10 +120,10 @@ for t in range(prehist,len(time)):
     #concentration = gradient(C0,xs[t-1],ys[t-1])
     #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
     #dC = np.array([gradient(C0, xs[t-past],ys[t-past])-gradient(C0, xs[t],ys[t]) for past in range(0,len(K_dc))])
-    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+2)])
+    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+1)])
     dC = dC + np.random.randn(len(dC))*0.
     #dC = np.flip(dC)
-    dC = np.diff(dC)  #change in concentration!! (not sure if this is reasonable)
+    #dC = np.diff(dC)  #change in concentration!! (not sure if this is reasonable)
     #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
     dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
     dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
@@ -158,74 +157,6 @@ plt.imshow(np.expand_dims(xx_grad,axis=1).T,extent=[np.min(xs),np.max(xs),np.min
 #plt.hold(True)
 plt.plot(xs,ys,'white')
 
-#####
-#Generate trajeectories
-#####
-def generate_traj(NN):
-    all_dc_p = []
-    all_dc = []
-    all_th = []
-    for ii in range(NN):
-        xs = np.zeros(time.shape)
-        ys = np.zeros(time.shape)  #2D location
-        xs[0] = np.random.randn()*0.1
-        ys[0] = np.random.randn()*0.1
-        prehist = max(len(K_dc),len(K_dcp))  #pre-histroy length
-        xs[:prehist] = np.random.randn(prehist)
-        ys[:prehist] = np.random.randn(prehist)
-        ths = np.zeros(time.shape)  #agle with 1,0
-        ths[:prehist] = np.random.randn(prehist)
-        dxy = np.random.randn(2)
-        dcs = np.zeros((time.shape[0],prehist))
-        dcps = np.zeros((time.shape[0],prehist))
-        dths = np.zeros(time.shape)
-        for t in range(prehist,len(time)):
-            
-            #concentration = gradient(C0,xs[t-1],ys[t-1])
-            #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-            #dC = np.array([gradient(C0, xs[t-past],ys[t-past])-gradient(C0, xs[t],ys[t]) for past in range(0,len(K_dc))])
-            dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+2)])
-            dC = dC + np.random.randn(len(dC))*0.00  #to add in noise for mapping
-            #dC = np.flip(dC)
-            dC = np.diff(dC)  #change in concentration!!
-            #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
-            dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
-            ths[t] = ths[t-1] + dth*dt
-            
-            #data collection
-            dcs[t] = dC  #concentration
-            dcps[t] = dc_perp  #perpendicular concentration difference
-            dths[t] = dth  #theta angle change
-            
-            e1 = np.array([1,0])
-            vec = np.array([xs[t-1],ys[t-1]])
-            theta = math.acos(np.clip(np.dot(vec,e1)/np.linalg.norm(vec)/np.linalg.norm(e1), -1, 1)) #current orienation relative to (1,0)
-    
-            vv = v_m + v_s*np.random.randn()
-            dd = np.array([vv*np.sin(ths[t]*np.pi/180), vv*np.cos(ths[t]*np.pi/180)])  #displacement
-            c, s = np.cos(theta), np.sin(theta)
-            R = np.array(((c,s), (-s, c)))  #rotation matrix, changing coordinates
-            dxy = np.dot(R,dd)
-    
-            xs[t] = xs[t-1] + dxy[0]*dt
-            ys[t] = ys[t-1] + dxy[1]*dt
-    
-        all_dc_p.append(dcps)  #recording dC_perpendicular
-        all_dc.append(dcs)  #recording dC
-        all_th.append(dths)  #recording head angle
-            
-        plt.plot(xs,ys)
-    
-    ###ALL DATA HERE~~
-    data_th = np.array(all_th).reshape(-1)
-    #data_dcp = np.array(all_dcp).reshape(-1)
-    data_dcp = np.vstack(all_dc_p)
-    #data_dc = np.array(all_dc).reshape(-1)
-    data_dc = np.vstack(all_dc)    
-    
-    return data_th, data_dcp, data_dc
-
 
 # %%
 #####
@@ -236,10 +167,6 @@ def generate_traj(NN):
 d2r = np.pi/180
 #vm_par = vonmises.fit((data_th-np.dot(data_dcp,K_dcp))*d2r, scale=1)
 #plt.hist(data_th*d2r,bins=100,normed=True);
-#plt.hold(True)
-#xx = np.linspace(np.min(data_th*d2r),np.max(data_th*d2r),100)
-#rv = vonmises(1/theta_fit[0]**0.5)#(vm_par[0])
-#plt.plot(xx, rv.pdf(xx),linewidth=3)
 
 def RaisedCosine_basis(nkbins,nBases):
     """
@@ -266,25 +193,18 @@ def nLL(THETA, dth,dcp,dc):
     negative log-likelihood objective function for fitting
     THETA includes parameter to be inferred and dth, dcp, dc are from recorded data
     """
-    #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
-    k_, A_, B_, C_ = THETA[0], THETA[1], THETA[2:7], THETA[7] #, THETA[8]#, THETA[9] #Kappa,A,Kdc,Kdcp,dc_amp,dcp_amp
-    B_ = np.dot(B_,RaisedCosine_basis(len(K_win),5))  #test with basis function
-    B_ = 100* B_/np.linalg.norm(B_)
+    k_, A_, B_, Amp, tau = THETA[0], THETA[1], THETA[2:7], THETA[7],THETA[8] #, THETA[8]#, THETA[9] #Kappa,A,Kdc,Kdcp,dc_amp,dcp_amp
+    B_ = np.dot(B_,RaisedCosine_basis(len(K_win),5))  #turning kernel (Kdc)
+    #B_ = 100* B_/np.linalg.norm(B_)
     #P = sigmoid(A_, B_, C_, D_, dcp)
     P = sigmoid2(A_,B_,dc)
-    #VM = np.exp(k_*np.cos((dth-a_*dcp)*d2r)) / (2*np.pi*iv(0,k_))#von Mises distribution
-    #vm_par = vonmises.fit((dth-a_*dcp)*d2r, scale=1)
-    rv = vonmises(k_)#(vm_par[0])
-    C_ = scaf *np.exp(-K_win/C_)
+    rv = vonmises(k_)
+    C_ = -Amp *np.exp(-K_win/tau)  #W-V kernel (Kdcp)
     VM = rv.pdf((dth-np.dot(dcp,C_))*d2r)
     marginalP = np.multiply((1-P), VM) + (1/(2*np.pi))*P
     nll = -np.sum(np.log(marginalP+1e-9))#, axis=1)
-    #fst = np.einsum('ij,ij->i', 1-P, VM)
-    #snd = np.sum(1/np.pi*P, axis=1)
     return np.sum(nll)
 
-#rv = vonmises(K)
-#VM = rv.pdf((data_th-np.dot(data_dcp,K_dcp))*d2r)
 def nLL2(THETA, VM, dth,dcp,dc):
     A_, B_ = THETA  #inferred paramter
     P = sigmoid2(A_, B_, dcp)
@@ -315,139 +235,6 @@ def der(THETA):
     der[1] = 0 #...
     return der
 
-# %%
-###generating data
-data_th, data_dcp, data_dc = generate_traj(30)
-
-# %%
-#optimize all with less parameters
-theta_guess = np.array([100,0.1])  #Kappa, A
-theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
-# theta_guess = np.concatenate((theta_guess,np.random.randn(5)))
-theta_guess = np.concatenate((theta_guess,np.array([0.5])))  #tau,dc_amp,dcp_amp
-#theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
-###Ground Truth: 25,5,0.023,0.4,40,0.003
-###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
-res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
-                              #,bounds = ((0,None),(0,None),(None,None),(None,None)))
-theta_fit = res.x
-###Expected result: ~100,0.1,kernel,0.5,50 (K,A,kenrel,tua,weight)
-##optimize logistic
-####Ground Truth: 25,5,0.023,0.4,40,0.003
-#res = scipy.optimize.minimize(nLL2,theta_guess,args=(VM,data_th,data_dcp,data_dc),bounds = ((0,None),(0,None)))
-
-
-# %%
-### check kernel forms!!
-fit_par = theta_fit[2:7]
-recKdc = np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
-recKdc = recKdc/np.linalg.norm(recKdc)
-plt.plot(-recKdc,'b',label='K_c_fit',linewidth=3)
-plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c',linewidth=3)  #compare form with normalized real kernel
-fit_par2 = theta_fit[7]  #single exponent fit
-# recKdcp = np.dot(fit_par2,RaisedCosine_basis(len(K_dcp),len(fit_par2)))  #for basis functions
-recKdcp = np.exp(-K_win/theta_fit[7])
-plt.plot(recKdcp/np.linalg.norm(recKdcp),'r',label='K_cp_fit',linewidth=3)
-#plt.hold(True)
-plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
-plt.legend()
-
-
-# %%
-### more repetition ###
-#allest = []
-#tt = 0
-#for sim in range(10):  #repeat simulation
-#    data_th, data_dcp, data_dc = generate_traj(100)
-#    for rep in range(3):  #repeat fit
-#        theta_guess = np.array([100,0.1,0.5])  #Kappa, A, kernal_parameter
-#        theta_guess = np.concatenate((theta_guess,np.random.randn(len(K_dc)-7)))  #the remaining parameters for weighted basis
-#        res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
-#        theta_fit = res.x
-#        reconK = np.dot(theta_fit[3:],RaisedCosine_basis(len(K_dc),len(theta_guess)-3))
-#        plt.plot(reconK/np.linalg.norm(reconK))
-#        plt.plot(K_dc/np.linalg.norm(K_dc))
-#        allest.append(reconK)  #storing all reconstructed kernels
-#        tt = tt+1
-#        print(tt)
-#
-#k = [i/np.linalg.norm(i) for i in allest]
-#plt.errorbar(range(10),np.mean(k,axis=0),yerr=np.std(k,axis=0))
-
-### checking optimization fits
-#plt.plot(theta_fit[2:2+len(K_dc)]/np.linalg.norm(theta_fit[2:2+len(K_dc)]),label='K_c',linewidth=3)
-#plt.hold(True)
-#plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c fit',linewidth=3)
-#plt.plot(theta_fit[-len(K_dcp):]/np.linalg.norm(theta_fit[-len(K_dcp):]),'r',label='K_cp',linewidth=3)
-##plt.hold(True)
-#plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
-#plt.legend()
-
-#plt.plot(30*(temporal_kernel(theta_fit[2], K_win)),label='K_c_fit',linewidth=3)
-#plt.hold(True)
-#plt.plot(K_dc,'b--',label='K_c',linewidth=3)
-#plt.plot(30*np.exp(-K_win/theta_fit[3]),'r',label='K_cp_fit',linewidth=3)
-##plt.hold(True)
-#plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
-#plt.legend()
-
-
-# %%
-###############################
-### check on von Mises density
-#plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
-aa,bb = np.histogram((data_th-np.dot(data_dcp,recKdcp))*d2r,bins=200)
-plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03,label='true')
-rv = vonmises(res.x[0])
-#plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
-plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r',label='inferred')
-plt.axis([-.5,.5,0,0.5])
-plt.legend()
-plt.xlabel('heading')
-plt.ylabel('pdf')
-#normalization by bin size???
-#checking pdf density
-print('sum of histogram:',np.sum(aa/len(data_th)))
-print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
-
-### check on logistic fitting
-plt.figure()
-xp = np.linspace(-0.5, 0.5, 1000)
-pxp=sigmoid2(res.x[2],np.dot(theta_fit[2:7],RaisedCosine_basis(len(K_dc),5)),data_dc)
-#pxp=sigmoid1(res.x[2],res.x[3],res.x[4],res.x[5],xp)
-plt.plot(xp,pxp,'-',linewidth=3,label='fit')
-#plt.hold(True)
-plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.5)
-#rescl = max(K_dc)/max(recKdc)  #use this before learning the scale factor...
-rescl = theta_fit[-1]
-rescl =np.linalg.norm(K_dc)/np.linalg.norm(recKdc)  #use this before learning the scale factor...
-#rescl = 1#theta_fit[-1]
-conv_dc1 = np.dot(recKdc*rescl,data_dc.T)
-pxp = sigmoid2(theta_fit[1],recKdc*rescl,data_dc)
-#pxp=sigmoid1(res.x[2],res.x[3],res.x[4],res.x[5],xp)
-plt.plot(conv_dc1,pxp,'o',linewidth=3,label='inferred',color='r',alpha=0.5)
-#plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.5)
-conv_dc = np.dot(K_dc,data_dc.T)
-plt.plot(conv_dc, sigmoid2(5*0.023, K_dc,data_dc),'o',linewidth=5,label='true',alpha=0.5)
-#plt.plot(xp,sigmoid1(0.023,0.4,140/0.6,0.003,xp),linewidth=3,label='ground-truth')
-plt.xlabel('x')
-plt.ylabel('y',rotation='horizontal') 
-plt.grid(True)
-plt.legend()
-
-### step-wise fitting
-#...
-# %%
-############################### control analyses
-###check the cencentration change spectrum
-Cc = np.cov(data_dc.T)
-uu,ss,vv = np.linalg.svd(Cc)
-plt.figure()
-plt.imshow(Cc)
-plt.figure()
-plt.plot(ss,'-o')
-plt.figure()
-plt.plot(uu[:,0])
 
 # %%
 #stimulate with white noise
@@ -491,32 +278,46 @@ dth_n, dcp_n, dc_n = generate_noise(30)
 #optimize all with less parameters
 theta_guess = np.array([100,0.1])  #Kappa, A
 theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
-# theta_guess = np.concatenate((theta_guess,np.random.randn(5)))
-theta_guess = np.concatenate((theta_guess,np.array([0.5])))  #tau,dc_amp,dcp_amp
+theta_guess = np.concatenate((theta_guess,np.array([0.5,10])))  #tau,dc_amp,dcp_amp
 #theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 ###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
-res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
-                              #,bounds = ((0,None),(0,None),(None,None),(None,None)))
+res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc))#,method='Nelder-Mead')
+
 theta_fit = res.x
 
 # %%
 ### check kernel forms!!
 fit_par = theta_fit[2:7]
 recKdc = np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
-recKdc = recKdc/np.linalg.norm(recKdc)
+#recKdc = recKdc/np.linalg.norm(recKdc)
 plt.plot(recKdc,'b',label='K_c_fit',linewidth=3)
-plt.plot(K_dc/np.linalg.norm(K_dc),'b--',label='K_c',linewidth=3)  #compare form with normalized real kernel
-fit_par2 = theta_fit[7]  #single exponent fit
-# recKdcp = np.dot(fit_par2,RaisedCosine_basis(len(K_dcp),len(fit_par2)))  #for basis functions
-recKdcp = np.exp(-K_win/theta_fit[7])
-plt.plot(recKdcp/np.linalg.norm(recKdcp),'r',label='K_cp_fit',linewidth=3)
+plt.plot(K_dc,'b--',label='K_c',linewidth=3)  #compare form with normalized real kernel
+plt.figure()
+recKdcp = theta_fit[7]*np.exp(-K_win/theta_fit[8])  #reconstruct Kdcp kernel
+plt.plot(recKdcp,'r',label='K_cp_fit',linewidth=3)
 #plt.hold(True)
-plt.plot(K_dcp/np.linalg.norm(K_dcp),'r--',label='K_cp',linewidth=3)
+plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
 plt.legend()
 
 # %%
-#sigmoid curve
+### check on von Mises density
+#plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
+aa,bb = np.histogram((data_th-np.dot(data_dcp,recKdcp))*d2r,bins=200)
+plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03,label='true')
+rv = vonmises(res.x[0])
+#plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
+plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r',label='inferred')
+plt.axis([-.5,.5,0,0.5])
+plt.legend()
+plt.xlabel('heading')
+plt.ylabel('pdf')
+#normalization by bin size???
+#checking pdf density
+print('sum of histogram:',np.sum(aa/len(data_th)))
+print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
+
+###check sigmoid curve
 plt.figure()
 xp = np.linspace(-0.5, 0.5, 1000)
 rescl =np.linalg.norm(K_dc)/np.linalg.norm(recKdc)  #use this before learning the scale factor (it will be exactly the scale factor above)
@@ -529,3 +330,24 @@ plt.xlabel('x')
 plt.ylabel('y',rotation='horizontal') 
 plt.grid(True)
 plt.legend()
+
+# %%
+###Scanning over data length and observe convergence of MSE
+Ns = np.array([10,30,50,70,90])
+Ns = np.array([5,5,5,5,5])
+all_theta_fit = []
+MSEs = []
+for nn in Ns:
+    print(nn)
+    dth_n, dcp_n, dc_n = generate_noise(nn)
+    res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc))#,method='Nelder-Mead')
+    theta_fit = res.x
+    fit_par = theta_fit[2:7]
+    recKdc = np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
+    recKdcp = theta_fit[7]*np.exp(-K_win/theta_fit[8])  #reconstruct Kdcp kernel
+    MSE_dc = np.sum((K_dc-recKdc)**2)
+    MSE_dcp = np.sum((K_dcp-recKdcp)**2)
+    
+    all_theta_fit.append(res.x)  #all theta_fit
+    MSEs.append([MSE_dc,MSE_dcp])  #all MSE measured for two kernels
+

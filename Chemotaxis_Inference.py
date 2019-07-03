@@ -153,7 +153,7 @@ for ii in range(20):
     all_th.append(dths)  #recording head angle
         
     plt.plot(xs,ys)
-    plt.hold(True)
+    #plt.hold(True)
 
 ###ALL DATA HERE~~
 data_th = np.array(all_th).reshape(-1)
@@ -168,7 +168,7 @@ data_dc = np.array(all_dc).reshape(-1)
 d2r = np.pi/180
 vm_par = vonmises.fit((data_th-alpha*data_dcp)*d2r, scale=1)
 plt.hist(data_th*d2r,bins=100,normed=True);
-plt.hold(True)
+#plt.hold(True)
 xx = np.linspace(np.min(data_th*d2r),np.max(data_th*d2r),100)
 rv = vonmises(vm_par[0])
 plt.plot(xx, rv.pdf(xx),linewidth=3)
@@ -233,12 +233,12 @@ theta_fit = res.x
 #res = scipy.optimize.minimize(nLL2,theta_guess,args=(VM,data_th,data_dcp,data_dc),bounds = ((0,None),(0,None)))
 #theta_fit = res.x
 
-
+# %%
 ###check on von Mises density
 #plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
 aa,bb = np.histogram((data_th-alpha*data_dcp)*d2r,bins=200)
 plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03)
-plt.hold(True)
+#plt.hold(True)
 rv = vonmises(res.x[1])
 #plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
 plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r')
@@ -249,12 +249,13 @@ print('sum of histogram:',np.sum(aa/len(data_th)))
 print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
 
 ###check on logistic fitting
+plt.figure()
 xp = np.linspace(-0.5, 0.5, 1000)
 pxp=sigmoid2(res.x[2],res.x[3],xp)
 #pxp=sigmoid1(res.x[2],res.x[3],res.x[4],res.x[5],xp)
 plt.plot(xp,pxp,'-',linewidth=3,label='fit')
-plt.hold(True)
-plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.5)
+#plt.hold(True)
+plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.8)
 #plt.plot(xp,sigmoid1(0.023,0.4,140/0.6,0.003,xp),linewidth=3,label='ground-truth')
 plt.xlabel('x')
 plt.ylabel('y',rotation='horizontal') 
