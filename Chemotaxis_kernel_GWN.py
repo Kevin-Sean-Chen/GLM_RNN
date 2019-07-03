@@ -86,7 +86,7 @@ d = 0.18  #difussion coefficient of butanone...
 
 #chemotaxis strategy parameter
 K_win = np.linspace(0,6,6/0.6)
-scaf = 10  #scale factor
+scaf = 100  #scale factor
 tempk = temporal_kernel(4.,K_win)/np.linalg.norm(temporal_kernel(4.,K_win))
 K_dc = 100 *(tempk)+.0  #random-turning kernel (biphasic form, difference of two gammas)
 #K_dc = scaf * np.flip(temporal_kernel(0.7,K_win))
@@ -97,7 +97,7 @@ wv_win = 0.5
 K_dcp = scaf *np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
-T = 5000  #whole duration of steps
+T = 3000  #whole duration of steps
 dt = 0.6  #seconds
 v_m = 0.12  #mm/s
 v_s = 0.01  #std of speed
@@ -278,8 +278,8 @@ dth_n, dcp_n, dc_n = generate_noise(30)
 #optimize all with less parameters
 theta_guess = np.array([100,0.1])  #Kappa, A
 theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
-theta_guess = np.concatenate((theta_guess,np.array([0.5,10])))  #tau,dc_amp,dcp_amp
-#theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
+theta_guess = np.concatenate((theta_guess,np.array([0.5,10])))  #tau,dcp_amp
+#theta_guess = np.concatenaate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 ###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
 res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc))#,method='Nelder-Mead')
@@ -301,22 +301,6 @@ plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
 plt.legend()
 
 # %%
-### check on von Mises density
-#plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
-aa,bb = np.histogram((data_th-np.dot(data_dcp,recKdcp))*d2r,bins=200)
-plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03,label='true')
-rv = vonmises(res.x[0])
-#plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
-plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r',label='inferred')
-plt.axis([-.5,.5,0,0.5])
-plt.legend()
-plt.xlabel('heading')
-plt.ylabel('pdf')
-#normalization by bin size???
-#checking pdf density
-print('sum of histogram:',np.sum(aa/len(data_th)))
-print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
-
 ###check sigmoid curve
 plt.figure()
 xp = np.linspace(-0.5, 0.5, 1000)
@@ -331,7 +315,24 @@ plt.ylabel('y',rotation='horizontal')
 plt.grid(True)
 plt.legend()
 
+### check on von Mises density
+plt.figure()
+aa,bb = np.histogram((data_th-np.dot(data_dcp,recKdcp))*d2r,bins=200)
+plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03,label='true')
+rv = vonmises(res.x[0])
+#plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
+plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r',label='inferred')
+plt.axis([-.5,.5,0,0.5])
+plt.legend()
+plt.xlabel('heading')
+plt.ylabel('pdf')
+#normalization by bin size???
+#checking pdf density
+print('sum of histogram:',np.sum(aa/len(data_th)))
+print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
+
 # %%
+###
 ###Scanning over data length and observe convergence of MSE
 Ns = np.array([10,30,50,70,90])
 Ns = np.array([5,5,5,5,5])
