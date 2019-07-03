@@ -334,17 +334,20 @@ plt.legend()
 # %%
 ###Scanning over data length and observe convergence of MSE
 Ns = np.array([10,30,50,70,90])
+Ns = np.array([5,5,5,5,5])
 all_theta_fit = []
 MSEs = []
 for nn in Ns:
+    print(nn)
     dth_n, dcp_n, dc_n = generate_noise(nn)
     res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc))#,method='Nelder-Mead')
     theta_fit = res.x
+    fit_par = theta_fit[2:7]
     recKdc = np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
     recKdcp = theta_fit[7]*np.exp(-K_win/theta_fit[8])  #reconstruct Kdcp kernel
     MSE_dc = np.sum((K_dc-recKdc)**2)
     MSE_dcp = np.sum((K_dcp-recKdcp)**2)
     
     all_theta_fit.append(res.x)  #all theta_fit
-    MSEs.append([MSE_dc,MSE_dcp])
+    MSEs.append([MSE_dc,MSE_dcp])  #all MSE measured for two kernels
 
