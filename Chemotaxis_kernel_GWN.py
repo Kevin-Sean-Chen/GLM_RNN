@@ -43,7 +43,7 @@ def d_theta(K_dcp, dc_perp, K, K_dc, dC):
     '''
     wv = np.dot(K_dcp,dc_perp) + K*np.random.randn()  #weathervaning strategy
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003  #sigmoidal function with parameters w
-    P_event = 5*0.023/(1 + np.exp(np.dot(K_dc,dC/dt)))  #less parameter version
+    P_event = 5*0.023/(1 + np.exp(np.dot(K_dc,dC/dt))) + 0.005  #less parameter version
     if np.random.rand() < P_event:
         beta = 1
     else:
@@ -86,7 +86,7 @@ d = 0.18  #difussion coefficient of butanone...
 
 #chemotaxis strategy parameter
 K_win = np.linspace(0,6,6/0.6)
-scaf = 100  #scale factor
+scaf = 10  #scale factor
 tempk = temporal_kernel(4.,K_win)/np.linalg.norm(temporal_kernel(4.,K_win))
 K_dc = 100 *(tempk)+.0  #random-turning kernel (biphasic form, difference of two gammas)
 #K_dc = scaf * np.flip(temporal_kernel(0.7,K_win))
@@ -95,9 +95,9 @@ K_dc = 100 *(tempk)+.0  #random-turning kernel (biphasic form, difference of two
 #K_dc = -np.exp(-K_win/0.5) 
 wv_win = 0.5
 K_dcp = scaf *np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
-K = 20  #covariance of weathervane
+K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
-T = 3000  #whole duration of steps
+T = 1000  #whole duration of steps
 dt = 0.6  #seconds
 v_m = 0.12  #mm/s
 v_s = 0.01  #std of speed
@@ -178,7 +178,7 @@ def RaisedCosine_basis(nkbins,nBases):
     ttb = np.tile(np.log(np.arange(0,nkbins)+1)/np.log(1.5),(nBases,1))  #take log for nonlinear time
     #ttb = np.tile(np.arange(0,nkbins),(nBases,1))
     dbcenter = nkbins / (nBases+3) # spacing between bumps
-    width = 4*dbcenter # width of each bump
+    width = 5*dbcenter # width of each bump
     bcenters = 2.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
     def bfun(x,period):
         return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)
@@ -251,8 +251,8 @@ def generate_noise(NN):
         dcps = np.zeros((time.shape[0],prehist))
         dths = np.zeros(time.shape)
         for t in range(prehist,len(time)):  #time series
-            dC = np.random.randn(len(K_dc))*.1  #white noise for mapping
-            dc_perp = np.random.randn(len(K_dcp))*.1  #white noise for mapping   
+            dC = np.random.randn(len(K_dc))*.01  #white noise for mapping
+            dc_perp = np.random.randn(len(K_dcp))*.01  #white noise for mapping   
             dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC) 
             #data collection
             dcs[t] = dC  #concentration
@@ -272,8 +272,8 @@ def generate_noise(NN):
 
 # %%
 ###generating data
-#dth_n, dcp_n, dc_n = generate_noise(30)
-data_th,data_dcp,data_dc = generate_noise(30)
+data_th,data_dcp,data_dc = generate_noise(5)
+
 
 # %%
 #optimize all with less parameters
@@ -293,12 +293,13 @@ fit_par = theta_fit[2:7]
 recKdc = np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
 #recKdc = recKdc/np.linalg.norm(recKdc)
 plt.plot(recKdc,'b',label='K_c_fit',linewidth=3)
-plt.plot(K_dc,'b--',label='K_c',linewidth=3)  #compare form with normalized real kernel
+plt.plot(K_dc,'b-o',label='K_c',linewidth=3)  #compare form with normalized real kernel
+plt.legend()
 plt.figure()
 recKdcp = theta_fit[7]*np.exp(-K_win/theta_fit[8])  #reconstruct Kdcp kernel
 plt.plot(recKdcp,'r',label='K_cp_fit',linewidth=3)
 #plt.hold(True)
-plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
+plt.plot(K_dcp,'r-o',label='K_cp',linewidth=3)
 plt.legend()
 
 # %%
@@ -335,13 +336,13 @@ print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
 # %%
 ###
 ###Scanning over data length and observe convergence of MSE
-Ns = np.array([10,30,50,70,90])
-Ns = np.array([5,5,5,5,5])
+Ns = np.array([1,5,25,125,250])#([10,20,40,80,160,320])
+#Ns = np.array([5,5,5,5,5])
 all_theta_fit = []
 MSEs = []
 for nn in Ns:
     print(nn)
-    dth_n, dcp_n, dc_n = generate_noise(nn)
+    data_th,data_dcp,data_dc = generate_noise(nn)
     res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc))#,method='Nelder-Mead')
     theta_fit = res.x
     fit_par = theta_fit[2:7]

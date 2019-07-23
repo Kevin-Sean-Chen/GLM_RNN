@@ -413,6 +413,13 @@ print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
 ### check on logistic fitting
 plt.figure()
 xp = np.linspace(-0.5, 0.5, 1000)
+pxp=sigmoid2(res.x[2],np.dot(theta_fit[2:7],RaisedCosine_basis(len(K_dc),5)),data_dc)
+#pxp=sigmoid1(res.x[2],res.x[3],res.x[4],res.x[5],xp)
+plt.plot(xp,pxp,'-',linewidth=3,label='fit')
+#plt.hold(True)
+plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.5)
+#rescl = max(K_dc)/max(recKdc)  #use this before learning the scale factor...
+rescl = theta_fit[-1]
 rescl =np.linalg.norm(K_dc)/np.linalg.norm(recKdc)  #use this before learning the scale factor...
 #rescl = 1#theta_fit[-1]
 conv_dc1 = np.dot(recKdc*rescl,data_dc.T)
@@ -524,3 +531,4 @@ plt.grid(True)
 plt.legend()
 
 ####testing for git
+
