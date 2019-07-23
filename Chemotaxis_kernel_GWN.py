@@ -272,7 +272,8 @@ def generate_noise(NN):
 
 # %%
 ###generating data
-dth_n, dcp_n, dc_n = generate_noise(30)
+#dth_n, dcp_n, dc_n = generate_noise(30)
+data_th,data_dcp,data_dc = generate_noise(30)
 
 # %%
 #optimize all with less parameters
