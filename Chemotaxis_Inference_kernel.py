@@ -126,7 +126,8 @@ for t in range(prehist,len(time)):
     #dC = np.flip(dC)
     dC = np.diff(dC)/dC[0]  #change in concentration!! (not sure if this is reasonable)
     #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
+    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+2)])  
+    dc_perp = np.diff(dc_perp)/dc_perp[0]  ###test
     dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
     ths[t] = ths[t-1] + dth*dt
     
@@ -189,7 +190,8 @@ def generate_traj(NN):
             #dC = np.flip(dC)
             dC = np.diff(dC)/dC[0]  #change in concentration!!
             #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
+            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+2)])
+            dc_perp = np.diff(dc_perp)/dc_perp[0]  ###test
             dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
             ths[t] = ths[t-1] + dth*dt
             
@@ -317,7 +319,7 @@ def der(THETA):
 
 # %%
 ###generating data
-data_th, data_dcp, data_dc = generate_traj(40)
+data_th, data_dcp, data_dc = generate_traj(20)
 
 # %%
 #optimize all with less parameters
@@ -440,7 +442,7 @@ plt.legend()
 # %%
 ############################### control analyses
 ###check the cencentration change spectrum
-Cc = np.cov(data_dc.T)
+Cc = np.cov(data_dcp.T)
 uu,ss,vv = np.linalg.svd(Cc)
 plt.figure()
 plt.imshow(Cc)
