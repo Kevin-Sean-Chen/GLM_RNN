@@ -14,6 +14,9 @@ import math
 import scipy.optimize   #for log-likelihood
 from scipy.special import iv  #for Bessel function
 from scipy.stats import vonmises  #for von Mises distribution
+import matplotlib 
+matplotlib.rc('xtick', labelsize=20) 
+matplotlib.rc('ytick', labelsize=20)
 
 
 #incoporate the temporal kernel for chemo-sensing
@@ -98,7 +101,7 @@ wv_win = 0.5
 K_dcp = scaf *np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
-T = 5000  #whole duration of steps
+T = 1000  #whole duration of steps
 dt = 0.6  #seconds
 v_m = 0.12  #mm/s
 v_s = 0.01  #std of speed
@@ -106,8 +109,8 @@ time = np.arange(0,T*dt,dt)
 xs = np.zeros(time.shape)
 ys = np.zeros(time.shape)  #2D location
 prehist = max(len(K_dc),len(K_dcp))  #pre-histroy length
-xs[:prehist] = np.random.randn(prehist)
-ys[:prehist] = np.random.randn(prehist)
+xs[:prehist] = 0.01#np.random.randn(prehist)
+ys[:prehist] = 0.01#1np.random.randn(prehist)
 ths = np.zeros(time.shape)  #agle with 1,0
 ths[:prehist] = np.random.randn(prehist)
 dxy = np.random.randn(2)
@@ -124,9 +127,10 @@ for t in range(prehist,len(time)):
     dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+2)])
     dC = dC + np.random.randn(len(dC))*0.
     #dC = np.flip(dC)
-    dC = np.diff(dC)/dC[0]  #change in concentration!! (not sure if this is reasonable)
+    dC = np.diff(dC)/dC[0] *10 #change in concentration!! (not sure if this is reasonable)
     #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
+    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+2)])
+    dc_perp = np.diff(dc_perp)/dc_perp[0]*10
     dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
     ths[t] = ths[t-1] + dth*dt
     
@@ -171,8 +175,8 @@ def generate_traj(NN):
         xs[0] = np.random.randn()*0.1
         ys[0] = np.random.randn()*0.1
         prehist = max(len(K_dc),len(K_dcp))  #pre-histroy length
-        xs[:prehist] = np.random.randn(prehist)
-        ys[:prehist] = np.random.randn(prehist)
+        xs[:prehist] = 0.01#np.random.randn(prehist)
+        ys[:prehist] = 0.01#np.random.randn(prehist)
         ths = np.zeros(time.shape)  #agle with 1,0
         ths[:prehist] = np.random.randn(prehist)
         dxy = np.random.randn(2)
@@ -187,9 +191,10 @@ def generate_traj(NN):
             dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+2)])
             dC = dC + np.random.randn(len(dC))*0.00  #to add in noise for mapping
             #dC = np.flip(dC)
-            dC = np.diff(dC)/dC[0]  #change in concentration!!
+            dC = np.diff(dC)/dC[0] *10  #change in concentration!!
             #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])    
+            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+2)]) 
+            dc_perp = np.diff(dc_perp)/dc_perp[0]*10   
             dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
             ths[t] = ths[t-1] + dth*dt
             
@@ -251,7 +256,7 @@ def RaisedCosine_basis(nkbins,nBases):
     ttb = np.tile(np.log(np.arange(0,nkbins)+1)/np.log(1.5),(nBases,1))  #take log for nonlinear time
     #ttb = np.tile(np.arange(0,nkbins),(nBases,1))
     dbcenter = nkbins / (nBases+3) # spacing between bumps
-    width = 4*dbcenter # width of each bump
+    width = 5.*dbcenter # width of each bump
     bcenters = 2.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
     def bfun(x,period):
         return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)
@@ -317,14 +322,14 @@ def der(THETA):
 
 # %%
 ###generating data
-data_th, data_dcp, data_dc = generate_traj(40)
+data_th, data_dcp, data_dc = generate_traj(50)
 
 # %%
 #optimize all with less parameters
 theta_guess = np.array([100,0.1])  #Kappa, A
 theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
 # theta_guess = np.concatenate((theta_guess,np.random.randn(5)))
-theta_guess = np.concatenate((theta_guess,np.array([10,0.5])))  #tau,dc_amp,dcp_amp
+theta_guess = np.concatenate((theta_guess,np.array([scaf,0.5])))  #tau,dc_amp,dcp_amp
 #theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 ###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
@@ -398,7 +403,7 @@ plt.legend()
 #plt.hist((data_th-alpha*data_dcp)*d2r,bins=100,normed=True,color='r');
 aa,bb = np.histogram((data_th-np.dot(data_dcp,recKdcp))*d2r,bins=200)
 plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03,label='true')
-rv = vonmises(res.x[0])
+rv = vonmises(theta_fit[0])
 #plt.scatter((data_th-alpha*data_dcp)*d2r,rv.pdf((data_th-alpha*data_dcp)*d2r),s=1,marker='.')
 plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r',label='inferred')
 plt.axis([-.5,.5,0,0.5])
@@ -420,7 +425,7 @@ plt.figure()
 #plt.plot(xp,sigmoid2(5*0.023, 140/0.6,xp),linewidth=5,label='ground-truth',alpha=0.5)
 #rescl = max(K_dc)/max(recKdc)  #use this before learning the scale factor...
 rescl = theta_fit[-1]
-rescl =np.linalg.norm(K_dc)/np.linalg.norm(recKdc)  #use this before learning the scale factor...
+rescl = 1#np.linalg.norm(K_dc)/np.linalg.norm(recKdc)  #use this before learning the scale factor...
 #rescl = 1#theta_fit[-1]
 conv_dc1 = np.dot(recKdc*rescl,data_dc.T)
 pxp = sigmoid2(theta_fit[1],recKdc*rescl,data_dc)
@@ -449,6 +454,53 @@ plt.plot(ss,'-o')
 plt.figure()
 plt.plot(uu[:,0])
 
+
+# %%
+###############################################################################################################################
+###Scanning over data length and observe convergence of MSE
+Ns = np.array([1,5,25,125,250,300,500])#([10,20,40,80,160,320])
+#Ns = np.array([50,50])
+all_theta_fit = []
+MSEs = []
+for nn in Ns:
+    print(nn)
+    data_th,data_dcp,data_dc = generate_traj(nn)
+    theta_guess = np.array([100,0.1])  #Kappa, A
+    theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
+    theta_guess = np.concatenate((theta_guess,np.array([scaf,0.5])))  #tau,dc_amp,dcp_amp
+    res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc))#,method='Nelder-Mead')
+    theta_fit = res.x
+    fit_par = theta_fit[2:7]
+    recKdc = np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
+    recKdcp = theta_fit[7]*np.exp(-K_win/theta_fit[8])  #reconstruct Kdcp kernel
+    MSE_dc = np.sum((K_dc-recKdc)**2)
+    MSE_dcp = np.sum((K_dcp-recKdcp)**2)
+    
+    all_theta_fit.append(res.x)  #all theta_fit
+    MSEs.append([MSE_dc,MSE_dcp])  #all MSE measured for two kernels
+    
+    
+# %%
+###############################################################################################################################
+###repreating kernel estimate to see variability
+rep = 10
+#data_th,data_dcp,data_dc = generate_traj(300)
+all_dCkernels = []
+all_dCPkernels = []
+for rr in range(0,rep):  #repeat inference for the same 100 tracks
+    print(rr)
+    theta_guess = np.array([100,0.1])  #Kappa, A
+    theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
+    theta_guess = np.concatenate((theta_guess,np.array([scaf,0.5])))  #tau,dc_amp,dcp_amp
+    res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc))
+    theta_fit = res.x
+    fit_par = theta_fit[2:7]
+    recKdc = np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
+    recKdcp = theta_fit[7]*np.exp(-K_win/theta_fit[8])  #reconstruct Kdcp kernel
+    all_dCkernels.append(recKdc)
+    all_dCPkernels.append(recKdcp)
+    
+
 # %%
 #stimulate with white noise
 def generate_noise(NN):
@@ -464,8 +516,8 @@ def generate_noise(NN):
         dcps = np.zeros((time.shape[0],prehist))
         dths = np.zeros(time.shape)
         for t in range(prehist,len(time)):  #time series
-            dC = np.random.randn(len(K_dc))*.1  #white noise for mapping
-            dc_perp = np.random.randn(len(K_dcp))*.1  #white noise for mapping   
+            dC = np.random.randn(len(K_dc))*.01  #white noise for mapping
+            dc_perp = np.random.randn(len(K_dcp))*.01  #white noise for mapping   
             dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC) 
             #data collection
             dcs[t] = dC  #concentration
@@ -492,11 +544,11 @@ dth_n, dcp_n, dc_n = generate_noise(30)
 theta_guess = np.array([100,0.1])  #Kappa, A
 theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
 # theta_guess = np.concatenate((theta_guess,np.random.randn(5)))
-theta_guess = np.concatenate((theta_guess,np.array([0.5])))  #tau,dc_amp,dcp_amp
+theta_guess = np.concatenate((theta_guess,np.array([scaf,0.5])))  #tau,dc_amp,dcp_amp
 #theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 ###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
-res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc),method='Nelder-Mead')
+res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc))#,method='Nelder-Mead')
                               #,bounds = ((0,None),(0,None),(None,None),(None,None)))
 theta_fit = res.x
 
