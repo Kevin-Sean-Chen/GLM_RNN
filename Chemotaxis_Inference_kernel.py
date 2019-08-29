@@ -445,7 +445,7 @@ plt.legend()
 # %%
 ############################### control analyses
 ###check the cencentration change spectrum
-Cc = np.cov(data_dc.T)
+Cc = np.cov(data_dcp.T)
 uu,ss,vv = np.linalg.svd(Cc)
 plt.figure()
 plt.imshow(Cc)
