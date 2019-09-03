@@ -19,8 +19,8 @@ import matplotlib
 matplotlib.rc('xtick', labelsize=20) 
 matplotlib.rc('ytick', labelsize=20)
 
-from Chemotaxis_Inference_kernel import temporal_kernel, autocorr, gradient,\
-                                        RaisedCosine_basis, sigmoid2, generate_traj
+#from Chemotaxis_Inference_kernel import temporal_kernel, autocorr, gradient,\
+#                                        RaisedCosine_basis, sigmoid2, generate_traj
 
 # %%
 ### paramerers
@@ -28,7 +28,7 @@ from Chemotaxis_Inference_kernel import temporal_kernel, autocorr, gradient,\
 v_abs = 0.22
 theta_dot = 10
 tau0 = 4.2
-sigma = np.pi/6
+sigma = 5#np.pi/6
 
 #navigation
 tau0 = 4.2  #stearing baseline
@@ -96,7 +96,7 @@ def d_theta(K_dcp, dc_perp, K, K_dc, dC):  #(dC,dCp,dth):
     ###just another von Mises
     #ft = np.random.vonmises(np.pi,1)/np.pi*180   #can be input dependent in the future...
     ###mixture of von Mises and uniform that depends on input
-    ft = bias_turn(gammaB)*180/np.pi
+    ft = VM_U(gammaB,sigma)*180/np.pi #bias_turn(gammaB)*180/np.pi
     rt = beta*ft  #run-and-tumble strategy with a biased turning angle
     dth = wv + rt
     if dth > 180:
@@ -105,19 +105,27 @@ def d_theta(K_dcp, dc_perp, K, K_dc, dC):  #(dC,dCp,dth):
         dth = dth+360
     return dth
 
+def VM_U(gammaB,sigma):
+    """
+    directly sample from uniform and von Mises
+    """
+    bern = np.random.binomial(1,gammaB)
+    angle = (1-bern)*(np.random.rand()-0.5)*np.pi*2 + bern*np.random.vonmises(np.pi,sigma)  #mixture of uniform and VM
+    return angle
+
 def ppf_theta(gammaB,rand):
     """
     inverse of the uniform plus von Mises distribution
     """
     #return (1-gammaB)/(2*np.pi)*theta + gammaB*vonmises.ppf(theta,sigma,loc=0,scale=1)
-    return (1-gammaB)*2*np.pi*rand + gammaB*vonmises.ppf(rand,sigma,loc=np.pi,scale=1)
+    return (1-gammaB)*2*np.pi*rand + gammaB*vonmises.ppf(rand,sigma,loc=np.pi,scale=1)  #np.pi as the opposite direction
     
 def bias_turn(gammaB):
     """
     inverse cumulated distribution sampling for the mixture of von Mises and uniform distribution
     """
     u = np.random.rand()
-    return ppf_theta(gammaB,u)-np.pi #add pi to be centered at pi rather than zero
+    return ppf_theta(gammaB,u)#-np.pi #add pi to be centered at pi rather than zero
 #plt.hist(np.array([bias_turn(1.) for ii in range(1000)]),20);  #the correct mixture distribution!
 
 # %%%%%%%%%%%%%%
@@ -134,13 +142,9 @@ m = 3  #power in Hill function
 vmax = 0.3  #maximum velocity
 #chemotaxis strategy parameter
 K_win = np.linspace(0,6,6/0.6)
-scaf = 5  #scale factor
+scaf = 100  #scale factor
 tempk = temporal_kernel(4.,K_win)/np.linalg.norm(temporal_kernel(4.,K_win))
-K_dc = 10 *(tempk)+.0  #random-turning kernel (biphasic form, difference of two gammas)
-#K_dc = scaf * np.flip(temporal_kernel(0.7,K_win))
-#K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
-#K_dc[np.where(K_dc>0)[0]] = 0  #rectification of the kernel
-#K_dc = -np.exp(-K_win/0.5) 
+K_dc = 100 *(tempk)+.0  #random-turning kernel (biphasic form, difference of two gammas)
 wv_win = 0.5
 K_dcp = scaf *np.exp(-K_win/wv_win)  #weathervaning kernel (exponential form)
 K = 5  #covariance of weathervane
@@ -153,130 +157,6 @@ time = np.arange(0,T*dt,dt)
 xs = np.zeros(time.shape)
 ys = np.zeros(time.shape)  #2D location
 prehist = max(len(K_dc),len(K_dcp))  #pre-histroy length
-xs[:prehist] = 0.01#np.random.randn(prehist)
-ys[:prehist] = 0.01#1np.random.randn(prehist)
-ths = np.zeros(time.shape)  #agle with 1,0
-ths[:prehist] = np.random.randn(prehist)
-dxy = np.random.randn(2)
-dcs = np.zeros((time.shape[0],prehist))
-dcps = np.zeros((time.shape[0],prehist))
-dths = np.zeros(time.shape)
-## new strategy with bias turns and velocity modulation
-for t in range(prehist,len(time)):
-    
-    #concentration = gradient(C0,xs[t-1],ys[t-1])
-    #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-    #dC = np.array([gradient(C0, xs[t-past],ys[t-past])-gradient(C0, xs[t],ys[t]) for past in range(0,len(K_dc))])
-    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+1)])
-    Ct = dC[0]
-    dC = dC + np.random.randn(len(dC))*0.
-    #dC = np.flip(dC)
-    ###dC = np.diff(dC)/dC[0] *10 #change in concentration!! (not sure if this is reasonable)
-    #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])
-    ###dc_perp = np.diff(dc_perp)/dc_perp[0]*10
-    dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
-    ths[t] = ths[t-1] + dth*dt
-    
-    #data collection
-    dcs[t,:] = dC  #concentration
-    dcps[t,:] = dc_perp  #perpendicular concentration difference
-    dths[t] = dth  #theta angle change
-        
-    e1 = np.array([1,0])
-    vec = np.array([xs[t-1],ys[t-1]])
-    theta = math.acos(np.clip(np.dot(vec,e1)/np.linalg.norm(vec)/np.linalg.norm(e1), -1, 1)) #current orienation relative to (1,0)
-    
-    ###concentration-dependent runs
-    #v_mod = velocity_dependent(np.dot(dC,K_dc),vmax,k,m)  #don't know how to deal with negative values yet... 
-    v_mod = velocity_dependent(Ct,vmax,k,m)  #just based on current concentration
-    vv = v_mod + v_s*np.random.randn() #max(v_mod, v_m + v_s*np.random.randn())
-    dd = np.array([vv*np.sin(ths[t]*np.pi/180), vv*np.cos(ths[t]*np.pi/180)])  #displacement
-    c, s = np.cos(theta), np.sin(theta)
-    R = np.array(((c,s), (-s, c)))  #rotation matrix, changing coordinates
-    dxy = np.dot(R,dd)
-    
-    xs[t] = xs[t-1] + dxy[0]*dt
-    ys[t] = ys[t-1] + dxy[1]*dt
-
-#plt.plot(ths)
-plt.figure()
-plt.plot(xs,ys)
-plt.figure()
-x = np.arange(np.min(xs),np.max(xs),1)
-xx_grad = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50)) #same background environment
-plt.imshow(np.expand_dims(xx_grad,axis=1).T,extent=[np.min(xs),np.max(xs),np.min(ys),np.max(ys)])
-#plt.hold(True)
-plt.plot(xs,ys,'white')
-
-#####
-#Generate trajeectories
-#####
-def generate_traj(NN):
-    all_dc_p = []
-    all_dc = []
-    all_th = []
-    for ii in range(NN):
-        xs = np.zeros(time.shape)
-        ys = np.zeros(time.shape)  #2D location
-        xs[0] = np.random.randn()*0.1
-        ys[0] = np.random.randn()*0.1
-        prehist = max(len(K_dc),len(K_dcp))  #pre-histroy length
-        xs[:prehist] = 0.01#np.random.randn(prehist)
-        ys[:prehist] = 0.01#np.random.randn(prehist)
-        ths = np.zeros(time.shape)  #agle with 1,0
-        ths[:prehist] = np.random.randn(prehist)
-        dxy = np.random.randn(2)
-        dcs = np.zeros((time.shape[0],prehist))
-        dcps = np.zeros((time.shape[0],prehist))
-        dths = np.zeros(time.shape)
-        for t in range(prehist,len(time)):
-            
-            #concentration = gradient(C0,xs[t-1],ys[t-1])
-            #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
-            #dC = np.array([gradient(C0, xs[t-past],ys[t-past])-gradient(C0, xs[t],ys[t]) for past in range(0,len(K_dc))])
-            dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+1)])
-            dC = dC + np.random.randn(len(dC))*0.00  #to add in noise for mapping
-            #dC = np.flip(dC)
-            ###dC = np.diff(dC)/dC[0] *10  #change in concentration!!
-            #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)]) 
-            ###dc_perp = np.diff(dc_perp)/dc_perp[0]*10   
-            dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
-            ths[t] = ths[t-1] + dth*dt
-            
-            #data collection
-            dcs[t] = dC  #concentration
-            dcps[t] = dc_perp  #perpendicular concentration difference
-            dths[t] = dth  #theta angle change
-            
-            e1 = np.array([1,0])
-            vec = np.array([xs[t-1],ys[t-1]])
-            theta = math.acos(np.clip(np.dot(vec,e1)/np.linalg.norm(vec)/np.linalg.norm(e1), -1, 1)) #current orienation relative to (1,0)
-    
-            vv = v_m + v_s*np.random.randn()
-            dd = np.array([vv*np.sin(ths[t]*np.pi/180), vv*np.cos(ths[t]*np.pi/180)])  #displacement
-            c, s = np.cos(theta), np.sin(theta)
-            R = np.array(((c,s), (-s, c)))  #rotation matrix, changing coordinates
-            dxy = np.dot(R,dd)
-    
-            xs[t] = xs[t-1] + dxy[0]*dt
-            ys[t] = ys[t-1] + dxy[1]*dt
-    
-        all_dc_p.append(dcps)  #recording dC_perpendicular
-        all_dc.append(dcs)  #recording dC
-        all_th.append(dths)  #recording head angle
-            
-        plt.plot(xs,ys)
-    
-    ###ALL DATA HERE~~
-    data_th = np.array(all_th).reshape(-1)
-    #data_dcp = np.array(all_dcp).reshape(-1)
-    data_dcp = np.vstack(all_dc_p)
-    #data_dc = np.array(all_dc).reshape(-1)
-    data_dc = np.vstack(all_dc)    
-    
-    return data_th, data_dcp, data_dc
 
 # %%
 ###Inference here
@@ -292,10 +172,10 @@ def nLL_dtheta(THETA, dth,dcp,dc):
     #alpha and tau for K_dcp parameter, K for VM variance, A for logisic numerator, B for K_dc kernel
     #gamma for mixture of random turn, and K2 for the varaicne of turning VM
     K_dcp = -alpha *np.exp(-K_win/tau)  #sign change due to the way simulated above
-    #rv = vonmises(K)
-    VM = vonmises.pdf((dth-np.dot(dcp,K_dcp))*d2r, K, loc=0, scale=1)  #pdf forweather-vaning
+    VM = vonmises.pdf((dth-np.dot(dcp,K_dcp))*d2r, K, loc=0, scale=1)/4  #pdf forweather-vaning
     K_dc = np.dot(B,RaisedCosine_basis(len(K_win),5))  #basis function for turning kernel
-    P = sigmoid2(A,K_dc,dc)    #logisitc form of turning probability
+    P = sigmoid2(A, K_dc, dc)    #logisitc form of turning probability
+    gamma = max(0,min(gamma,1))  #it is a ratio in the mixture
     marginalP = np.multiply((1-P), VM) + ((1-gamma)/(2*np.pi) + gamma*vonmises.pdf(dth*d2r, K2, loc=np.pi, scale=1))*P
     nll = -np.sum(np.log(marginalP+1e-9))
     return np.sum(nll)
@@ -306,18 +186,53 @@ def nLL_velocity(THETA,vs,dc):
     """
     
     return
+
+# %%
+#stimulate with white noise
+def generate_noise(NN):
+    """
+    Generate dth response with white noise mapping rather than concentration environment
+    """
+    all_dc_p = []
+    all_dc = []
+    all_th = []
+    for ii in range(NN):  #repetition
+        prehist = max(len(K_dc),len(K_dcp))  #kernel length
+        dcs = np.zeros((time.shape[0],prehist))
+        dcps = np.zeros((time.shape[0],prehist))
+        dths = np.zeros(time.shape)
+        for t in range(prehist,len(time)):  #time series
+            dC = np.random.randn(len(K_dc))*0.01  #white noise for mapping
+            dc_perp = np.random.randn(len(K_dcp))*.01  #white noise for mapping   
+            dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC) 
+            #data collection
+            dcs[t] = dC  #concentration
+            dcps[t] = dc_perp  #perpendicular concentration difference
+            dths[t] = dth  #theta angle change
+    
+        all_dc_p.append(dcps)  #recording dC_perpendicular
+        all_dc.append(dcs)  #recording dC
+        all_th.append(dths)  #recording head angle
+    
+    ###ALL DATA HERE~~
+    data_th = np.array(all_th).reshape(-1)
+    data_dcp = np.vstack(all_dc_p)
+    data_dc = np.vstack(all_dc)    
+    
+    return data_th, data_dcp, data_dc
+
 # %%
 ###fitting part
-data_th, data_dcp, data_dc = generate_traj(60)
+data_th, data_dcp, data_dc = generate_noise(100)
 
 # %%
 #optimize all with less parameters
 theta_guess = np.array([50,0.5,100,0.1])  #alpha, tau, K, A
 theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
-theta_guess = np.concatenate((theta_guess,np.array([0.5,0.5])))  #gamma, K2(sigma)
+theta_guess = np.concatenate((theta_guess,np.array([0.5, 10])))  #gamma, K2(sigma)
 bnds = ((0,None),(0,None),(0,None),(0,None),(None,None),(None,None),(None,None),(None,None),(None,None),(0,1),(0,None))
-res = scipy.optimize.minimize(nLL_dtheta,theta_guess,args=(data_th,data_dcp,data_dc),bounds=bnds  ,method='Nelder-Mead')
-#ground truth: 50, 0.5, 100, [], 0.5, 0.5
+res = scipy.optimize.minimize(nLL_dtheta,theta_guess,args=(data_th,data_dcp,data_dc))#,bounds=bnds)#, method='Nelder-Mead')#, bounds=bnds)
+#ground truth: 50, 0.5, 100, 0.1, [], 0.5, 10
 
 theta_fit = res.x
 
@@ -330,4 +245,40 @@ plt.plot(K_dc,'b--',label='K_c',linewidth=3)  #compare form with normalized real
 recKdcp = theta_fit[0]*np.exp(-K_win/theta_fit[1])
 plt.plot(recKdcp,'r',label='K_cp_fit',linewidth=3)
 plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
-plt.legend()
+plt.legend(fontsize=15)
+
+# %%
+###check densities
+#sigmoid curve
+conv_dc1 = np.dot(recKdc,data_dc.T)
+pxp = sigmoid2(theta_fit[3],recKdc,data_dc)
+plt.plot(conv_dc1,pxp,'o',linewidth=3,label='inferred',color='r',alpha=0.1)
+conv_dc = np.dot(K_dc,data_dc.T)
+plt.plot(conv_dc, sigmoid2(5*0.023, K_dc,data_dc),'o',linewidth=5,label='true',alpha=0.1)
+plt.xlabel('filtered dC',fontsize=20)
+plt.ylabel('P(turn)',rotation='horizontal',fontsize=20) 
+plt.grid(True)
+plt.legend(fontsize=15)
+
+# %%
+### check on von Mises density
+# turning bias
+plt.hist([VM_U(gamma,sigma) for ii in range(1000)],bins=50,label='true')
+plt.hist([VM_U(theta_fit[9],theta_fit[10]) for ii in range(1000)],bins=50,alpha=0.5,color='r',label='inferred')
+plt.legend(fontsize=15)
+plt.xlabel('turning',fontsize=20)
+plt.ylabel('pdf',fontsize=20)
+# weather-vaning
+plt.figure()
+aa,bb = np.histogram((data_th-np.dot(data_dcp,recKdcp))*d2r,bins=200)
+plt.bar(bb[:-1],aa/len(data_th),align='edge',width=0.03,label='true')
+rv = vonmises(theta_fit[2])
+plt.bar(bb[:-1],rv.pdf(bb[:-1])*np.mean(np.diff(bb)),alpha=0.5,align='center',width=0.03,color='r',label='inferred')
+plt.axis([-.5,.5,0,0.5])
+plt.legend(fontsize=15)
+plt.xlabel('heading',fontsize=20)
+plt.ylabel('pdf',fontsize=20)
+#normalization by bin size???
+#checking pdf density
+print('sum of histogram:',np.sum(aa/len(data_th)))
+print('integrate von Mises:',np.sum(rv.pdf(bb[:-1])*np.mean(np.diff(bb))))
