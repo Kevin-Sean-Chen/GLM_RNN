@@ -17,7 +17,7 @@ sns.set_style("white")
 sns.set_context("talk")
 
 # %%
-def ODE_filer(stimuli, dt):
+def ODE_filter(stimuli, dt):
     """
     Input odor stimuli and output [Ca2+] signal after signal cascade in AWC neuron
     Kinetic parameters are from Kato's 2014 Neuron paper... additional nonlinearity and adaptation might be missing
@@ -88,7 +88,7 @@ kaf = 1  #ralative value to kas...
 time = 10  #sec
 dt = 0.01  #~10ms
 tk = np.arange(0,time,dt)
-Kt = kaf/(ka-kf)*np.exp(-kf*tk) - kas/(ka-kf)*np.exp(-ks*tk) + (kas/(ka-ks) - kaf/(ka-kf))*np.exp(-ka*tk)
+Kt = kaf/(ka-kf)*np.exp(-kf*tk) - kas/(ka-ks)*np.exp(-ks*tk) + (kas/(ka-ks) - kaf/(ka-kf))*np.exp(-ka*tk)
 plt.plot(tk,Kt)
 plt.xlabel('time (s)')
 plt.ylabel('Kernel')
@@ -99,14 +99,16 @@ time = 500  #sec
 dt = 0.01  #~10ms
 t = np.arange(0,time,dt)## periodic input
 
-f = 5  #frequency  (5Hz for 200ms flickering)
+f = 20  #frequency  (5Hz for 200ms flickering)
 stim = np.cos(t*(2*np.pi)*f)*1 + 1*np.random.randn(len(t))
 
-R = ODE_filer(stim, dt)
+plt.plot(tk,Kt/np.linalg.norm(Kt),label='analytic')#/np.linalg.norm(Kt)
+R = ODE_filter(stim, dt)
 win = len(tk)
 K_est = inference_kernel(stim,R,win)
-plt.plot(tk,np.flip(K_est)/np.linalg.norm(K_est),label='infer')
+tempK = np.flip(K_est)/np.linalg.norm(K_est)
+#tempK = np.flip(K_est)
+plt.plot(tk, tempK, '--',label='inferred')
 plt.xlabel('time (s)')
-plt.ylabel('inferred kernel')
-plt.plot(tk,Kt/np.linalg.norm(Kt),label='analytic')
+plt.ylabel('AWC kernel')
 plt.legend()

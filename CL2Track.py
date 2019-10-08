@@ -202,14 +202,14 @@ def get_posture(X,Y,dt,alpha):
 ### load and plot some data
 #f = h5py.File('/home/kschen/github/local-linear-segmentation/AML32_moving.hdf5','r')  #GCamp6s
 f = h5py.File('/home/kschen/github/local-linear-segmentation/AML18_moving.hdf5','r')  #GFP
-subf = 'BrainScanner20160506_160928'#'BrainScanner20160506_155051'
+subf = 'BrainScanner20160506_160928'#'BrainScanner20160506_155051'#
 CLS = f[subf]['CL']#['Behavior']['Eigenworm1']
 for tt in range(0,10):
     temp = CLS[tt]
     #plt.plot(temp[:,0],temp[:,1],'-o')
     
 #prep for posture data
-window = np.arange(500,1500)
+window = np.arange(1000,2000)#(1000,2000)#
 T = len(window)  #time window
 cll = CLS[0].shape[0]  #length of the center-line
 X = np.zeros((T,cll))
@@ -234,13 +234,29 @@ xx,yy = RBM2traj(RBM,dt)
 #true trajectory data
 x_true = f[subf]['Behavior']['X']
 y_true = f[subf]['Behavior']['Y']
-plt.plot([x_true[ww] for ww in window],[y_true[ww] for ww in window])
+x_tr = np.array([x_true[ww] for ww in window[:-1]])
+y_tr = np.array([y_true[ww] for ww in window[:-1]])
+plt.plot(x_tr, y_tr)
 plt.figure()
 plt.subplot(211)
 plt.title('resistive-force model')
 plt.plot(yy,xx)
-tempx = [x_true[ww] for ww in window]
-tempy = [y_true[ww] for ww in window]
+tempx = np.array([x_true[ww] for ww in window])
+tempy = np.array([y_true[ww] for ww in window])
 plt.subplot(212)
 plt.title('true')
 plt.plot(tempx,tempy)
+
+# %%
+###matching traces
+XY_t = np.concatenate((x_tr,y_tr),axis=1)  #true trajectory
+XY_t = XY_t-XY_t.mean(axis=0)   #zero-center
+XY_r = np.concatenate((yy,xx),axis=1)  #reconstructed trajectory
+XY_r = XY_r-XY_r.mean(axis=0)   #zero-center
+
+aa = 0.0017#0.0018
+plt.plot(XY_t[:,0],XY_t[:,1],label='data')
+plt.plot(aa*XY_r[:,0],aa*XY_r[:,1],label='prediction')
+plt.legend()
+
+

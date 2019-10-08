@@ -40,7 +40,11 @@ def d_theta(alpha, dc_perp, K, w, dC):
 
 #concentration gradient in space
 def gradient(C0,x,y):
+    #linear gradient
     concentration = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50))  #depends on diffusion conditions
+    #Gaussian gradient
+    dist = np.linalg.norm(np.array([x,y])-np.array([dis2targ,0]))
+    concentration = C0/(4*np.pi*d*D*duT)*np.exp(-(dist)**2/(400*D*duT*50)) 
     return concentration
 
 #measure for concentration difference for weathervane
@@ -58,10 +62,10 @@ duT = 60*60*1
 d = 0.18
 
 #chemotaxis strategy parameter
-alpha = 20  #strength of OU forcing
-K = 5  #covariance of weathervane
+alpha = 30  #strength of OU forcing
+K = 10  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
-T = 3000
+T = 1500
 dt = 0.6  #seconds
 v_m = 0.12  #mm/s
 v_s = 0.01  #std of speed
@@ -112,7 +116,7 @@ dxy = np.random.randn(2)
 all_dc_p = []
 all_dc = []
 all_th = []
-for ii in range(20):
+for ii in range(30):
     xs = np.zeros(time.shape)
     ys = np.zeros(time.shape)  #2D location
     xs[0] = np.random.randn()*0.1
@@ -160,6 +164,7 @@ data_th = np.array(all_th).reshape(-1)
 data_dcp = np.array(all_dc_p).reshape(-1)
 data_dc = np.array(all_dc).reshape(-1)
 
+# %%
 #####
 #Inference for chemotactic strategy
 #####
