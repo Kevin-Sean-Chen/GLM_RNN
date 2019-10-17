@@ -40,11 +40,19 @@ def d_theta(alpha, dc_perp, K, w, dC):
 
 #concentration gradient in space
 def gradient(C0,x,y):
+<<<<<<< HEAD
     ### for linear gradient
     #concentration = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50))  #depends on diffusion conditions
     ### for Gaussian gradient
     dist = np.linalg.norm(np.array([x,y])-np.array([dis2targ,0]))
     concentration = C0/(4*np.pi*d*D*duT)*np.exp(-dist**2/(400*D*duT*50))
+=======
+    #linear gradient
+    concentration = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50))  #depends on diffusion conditions
+    #Gaussian gradient
+    dist = np.linalg.norm(np.array([x,y])-np.array([dis2targ,0]))
+    concentration = C0/(4*np.pi*d*D*duT)*np.exp(-(dist)**2/(400*D*duT*50)) 
+>>>>>>> 5ed18d182680807767c7bcb08f0dd0014283b6c6
     return concentration
 
 #measure for concentration difference for weathervane
@@ -62,8 +70,8 @@ duT = 60*60*1
 d = 0.18
 
 #chemotaxis strategy parameter
-alpha = 20  #strength of OU forcing
-K = 5  #covariance of weathervane
+alpha = 30  #strength of OU forcing
+K = 10  #covariance of weathervane
 w = 0  #logistic parameter (default for now)
 T = 1500
 dt = 0.6  #seconds

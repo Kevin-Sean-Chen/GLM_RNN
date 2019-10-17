@@ -548,8 +548,9 @@ theta_guess = np.concatenate((theta_guess,np.array([scaf,0.5])))  #tau,dc_amp,dc
 #theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
 ###Ground Truth: 25,5,0.023,0.4,40,0.003
 ###k_, A_, a_N, a_exp, B_N, B_exp = 25, 5, 30, 4, 30, 0.5
-res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc))#,method='Nelder-Mead')
-                              #,bounds = ((0,None),(0,None),(None,None),(None,None)))
+res = scipy.optimize.minimize(nLL,theta_guess,args=(data_th,data_dcp,data_dc)) 
+                                #,method='Nelder-Mead')
+                                #,bounds = ((0,None),(0,None),(None,None),(None,None)))
 theta_fit = res.x
 
 # %%
