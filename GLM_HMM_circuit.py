@@ -37,13 +37,13 @@ x = np.zeros((4,lt))  #voltage
 spk = np.zeros_like(x)  #spikes
 syn = np.zeros_like(x)  #synaptic efficacy
 x[:,0] = np.random.randn(4)
-J = np.array([[0, 1, -1, 0],\
+temp = np.array([[0, 1, -1, 0],\
               [0, 1.2,-1.3, 1],\
-              [0,-1.1, 1.2, 1],\
+              [0,-.6, 1.2, 1],\
               [0, 0, 0, 0]])
-J = J.T*.1
+J = temp.T*.1
 #J = np.random.rand(4,4)
-noise = 0.5
+noise = 0.05
 stim = np.random.randn(lt)*.5
 taum = 5  #fast time scale
 taus = 10  #slow time scale

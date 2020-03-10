@@ -57,11 +57,14 @@ def GLMHMM(y, X, W0, T0, fitopts):
         
         ### fit GLM for each hidden state %eqs (13.17)
         opts2 = fitopts.copy()
+        reg = fitopts.regularize
+        qf = reg*sp.sparse.eye(l)
         for kk in range(h):
             opts2.weights = gamma[kk,:]  #update learned GLM weights
-            results = GLMfit(y, X, 0.001*sp.sparse.eye(l), opts2)  
+            results = GLMfit(y, X, qf, opts2)  
             W[:,kk] = results.w
         
+        # print(sum(np.diff(W, axis=1)))
         ### update transition at start and end  %eqs (13.18)
         pi0 = gamma[:,0]
         
@@ -73,11 +76,11 @@ def GLMHMM(y, X, W0, T0, fitopts):
 #        xi = np.multiply(xi, 1/gamma.sum(1)[:,None])
 #        T = np.multiply(xi, 1/xi.sum(1))
         xi = np.multiply(xi, 1/gamma.sum(1))
-        T = np.multiply(xi, 1/xi.sum(1))
+        T = np.multiply(xi, 1/xi.sum(1))  #transition probability between hidden states
         
-#        if loglik < loglik0 + thresh:
-#            print('Converged in ',ii,'iterations:\n')
-#            break
+        if loglik < loglik0 + thresh:
+            print('Converged in ',ii,'iterations:\n')
+            break
         loglik0 = loglik.copy()
         print('Iteration ',ii,'log-likelihood = ',loglik0,'\n')
         
@@ -102,9 +105,9 @@ def GLMfit(y, X, qf, opts):
     """
     
     #w0 = opts.w0.copy()  #can be optimized here~
-    #w0 = np.zeros((X.shape[1],1))
+    w0 = np.zeros((X.shape[1],1))
     #w0 = ws[:,1].copy()
-    w0 = np.random.randn(X.shape[1],1)
+    #w0 = np.random.randn(X.shape[1],1)
     w = irls(y, X, w0, qf, opts.baseline, opts.family, opts.familyextra, opts.algo, opts.Display, opts.weights)
     
     l0 = evaMaxGLMLL(y, opts.family, opts.baseline, opts.familyextra, opts.weights)
@@ -199,7 +202,8 @@ p = 1/(1 + np.exp(-eta))  #nonlinearity
 y = (p > np.random.rand(len(p)))  #spiking process
 
 w0 = ww+np.random.randn(len(ww))*0.5
-test_w = irls(y, X, w0, 0.00*qf, 1, glmopts.family, glmopts.familyextra, 1, 1, 1)
+qf = 0.001*sp.sparse.eye(len(ww))
+test_w = irls(y, X, w0, 0.00*qf, 1, 'binomlogit', 1, 1, 1, 1)
 
 plt.figure()
 plt.plot(ww)
@@ -226,25 +230,33 @@ def hmmFwdBack(initDist, transmat, softev):
     return gamma, alpha, beta, loglik
 
 def hmmFilter(initDist, transmat, softev):
+    """
+    Forward calcultion for alpha
+    """
     K, T = softev.shape
     scale = np.zeros(T)
     AT = transmat.T
     alpha = np.zeros((K,T))
-    temp = initDist[:]*softev[:,0]
-    alpha[:,0], scale[0] = temp/temp.sum()
+    temp = initDist *softev[:,0]
+    scale[0] = temp.sum()
+    alpha[:,0] = temp/temp.sum()
     for tt in range(1,T):
         temp = np.matmul(AT, alpha[:,tt-1])*softev[:,tt]
-        alpha[:,tt], scale[tt] = temp/temp.sum()
+        scale[tt] = temp.sum()
+        alpha[:,tt] = temp/temp.sum()
     loglik = np.sum(np.log(scale + eps))
     return loglik, alpha
-
+    
 def hmmBackwards(transmat, softev):
+    """
+    Backwards calculation for beta
+    """
     K, T = softev.shape
     beta = np.zeros((K,T))
     beta[:,-1] = np.ones(K)
-    for tt in range(T-2,-1,-1):
+    for tt in range(T-2,-1,-1):  #from T-1 back to 0, strange in python...
         temp = np.matmul(transmat, beta[:,tt+1]*softev[:,tt+1])
-        beta[:,tt] = temp/temp.sum()  #normal(ize by all
+        beta[:,tt] = temp/temp.sum()  #normalize by all
     return beta
 
 # %% testing w/ simulated data
@@ -274,14 +286,15 @@ plt.plot(ws)
 glmopts = DotMap()
 glmopts.family = 'binomlogit'
 glmopts.familyextra = 1
+glmopts.regularize = 10
 glmopts.thresh = 10**-5
-glmopts.niter = 100
+glmopts.niter = 100  #maximum iteration
 glmopts.baseline = 1 
 glmopts.algo = 1 
 glmopts.Display = 1
 T0 = np.random.rand(ws.shape[1],ws.shape[1])
 T0 = T0/T0.sum(0)
-w0 = np.random.randn(ws.shape[0],ws.shape[1])
+w0 = np.random.randn(ws.shape[0],ws.shape[1])*1 + ws
 glmopts.w0 = w0.copy()
 results = GLMHMM(y, X, w0, T0, glmopts)
 
