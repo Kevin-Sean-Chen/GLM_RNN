@@ -51,11 +51,11 @@ def GLMHMM(y, X, W0, T0, fitopts):
             lls[kk,:] = evalGLMLL( y, etas[:,kk][:,None], np.ones(1)[:,None], 0, fitopts.family, fitopts.familyextra, 1)
         lls = np.exp(-lls)
             
-        ### Forward-backwards for HMMshape
+        ### Forward-backwards for HMM (E-step)
         gamma, alpha, beta, loglik = hmmFwdBack(pi0, T, lls)  #%given pi0, alpha_nm, and eta_nk (eta_nk from GLM)
         #NOTE: make T depend on X for stimulsu driven state transition!!!??
         
-        ### fit GLM for each hidden state %eqs (13.17)
+        ### fit GLM for each hidden state %eqs (13.17) (M-step updates with GLM)
         opts2 = fitopts.copy()
         reg = fitopts.regularize
         qf = reg*sp.sparse.eye(l)
