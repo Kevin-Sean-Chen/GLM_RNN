@@ -382,6 +382,7 @@ def transition_GLM(X,K):
 # %%
 T = 2000
 pad = 10
+rg = np.arange(0,pad)
 SN = np.random.randn(T,1)
 Stimpad = np.concatenate((SN,np.zeros((pad,1))),axis=0)
 S = np.arange(-pad+1,1,1)[np.newaxis,:] + np.arange(0,T,1)[:,np.newaxis]

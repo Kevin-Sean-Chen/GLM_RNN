@@ -105,13 +105,36 @@ target = np.array([10,10])  #traget position
 kl = 50  #kenrel length
 nb = 5  #number of basis for the kenel
 K = np.dot(np.random.randn(nb), (np.fliplr(basis_function1(kl,nb).T).T).T)  #constructing the kernel with basis function
-N = .1  #scaling of logistic nonlinearity
+N = .01  #scaling of logistic nonlinearity
 Ns = 10  #number of repetitionsd
 pars = C0, sig, target, K, N, thr, v, vr
 Et, St, At = SimTask(Ns, pars, time)
 
-plt.plot(Et.T)
+plt.figure()
+plt.subplot(311)
+plt.plot(time,Et.T)
+plt.ylabel('E_t')
+plt.subplot(312)
+plt.plot(time,St.T)
+plt.ylabel('S_t')
+plt.subplot(313)
+plt.plot(time,At.T)
+plt.ylabel('A_t')
+plt.xlabel('time')
 
 # %% performance scan
 
 # %% information analysis
+from mutual_info import *
+IES = np.zeros(Ns)
+ISA = np.zeros(Ns)
+IEA = np.zeros(Ns)
+for nn in range(Ns):
+    IES[nn] = mutual_information_2d(Et[nn,:], St[nn,:], sigma=1, normalized=False)
+    ISA[nn] = mutual_information_2d(St[nn,:], At[nn,:], sigma=1, normalized=False)
+    IEA[nn] = mutual_information_2d(Et[nn,:], At[nn,:], sigma=1, normalized=False)
+plt.figure()
+ind = np.arange(3)
+plt.plot(ind,[IES, ISA, IEA])
+plt.xticks(ind, ('I(E,S)', 'I(S,A)', 'I(E,A)'))
+plt.ylabel('bits')
