@@ -45,7 +45,7 @@ syn[:,0] = np.random.rand(N)
 J = np.array([[6.8, -2.5, -2],\
               [-3, 7., -2],\
               [-2.3, -2.5, 4.1]])
-J = J.T*1.  #connectivity matrix
+J = J.T*2.  #connectivity matrix
 noise = 1.  #noise strength
 stim = np.random.randn(lt)*20  #np.random.randn(N,lt)*20.  #common random stimuli
 taum = 5  #5 ms
@@ -222,7 +222,7 @@ def build_convolved_matrix(stimulus, spikes, Ks, couple):
 # %%
 ###############################################################################
 # %% inference method (single)
-nneuron = 0
+nneuron = 2
 pad = 100  #window for kernel
 nbasis = 7  #number of basis
 couple = 1  #wether or not coupling cells considered
@@ -297,3 +297,53 @@ for jj in range(0,N):
         plt.subplot(3,3,kk+1)
         plt.plot(allK_rec[jj,ii+1,:])
         kk = kk+1
+
+# %% Scaling
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+def sim_circuit(lt):
+    """
+    Exact same model as above but put in function for to scan through different lengths
+    """
+    x = np.zeros((N,lt))  #voltage
+    spk = np.zeros_like(x)  #spikes
+    rate = np.zeros_like(x)  #spike rate
+    x[:,0] = np.random.randn(N)*1
+    stim = np.random.randn(lt)*20  #np.random.randn(N,lt)*20.  #common random stimuli
+    
+    ###iterations for neural dynamics
+    for tt in range(0,lt-1):
+        x[:,tt+1] = x[:,tt] + dt/taum*( -x[:,tt] + (np.matmul(J,LN(1*x[:,tt]))) + stim[tt]*np.array([1,1,1]) + noise*np.random.randn(N)*np.sqrt(dt))
+        spk[:,tt+1] = spiking(LN(x[:,tt+1]),dt)
+        rate[:,tt+1] = LN(x[:,tt+1])
+    return rate, stim
+
+def comp_varexp(Y,S,nneuron):
+    """
+    Compute variance explained from the GLM results, with parameters set above
+    """
+    y = np.squeeze(Y[nneuron,:])  #spike train of interest
+    stimulus = S[:,None]  #same stimulus for all neurons
+    X = build_convolved_matrix(stimulus, Y.T, Ks, couple)  #design matrix with features projected onto basis functions
+    glm = GLMCV(distr="binomial", tol=1e-5, eta=1.0,
+                score_metric="deviance",
+                alpha=0., learning_rate=1e-6, max_iter=1000, cv=3, verbose=True)  #important to have v slow learning_rate
+    glm.fit(X, y)
+    yhat = simulate_glm('binomial', glm.beta0_, glm.beta_, X)  #simulate spike rate given the firring results
+    varexp = np.corrcoef(y,yhat)
+    return varexp
+
+lts = np.array([200,500,1000,5000,10000,20000])
+VARS = np.zeros((N,len(lts)))
+Y, S = sim_circuit(20000)
+for nn in range(N):
+    for ti,tt in enumerate(lts):
+#        Y, S = sim_circuit(tt)
+        varexp = comp_varexp(Y[:,:tt],S[:tt],nn)
+        VARS[nn,ti] = varexp[0][1]
+
+# %%
+plt.figure()
+plt.plot(lts,VARS.T,'-o')
+plt.xlabel('length of simulation')
+plt.ylabel('variance explained')
+

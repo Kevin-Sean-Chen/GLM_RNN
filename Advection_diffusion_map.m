@@ -38,13 +38,21 @@ load('\\tigress-cifs.princeton.edu\fileset-leifer\Kevin\20200303_GWN_app_flow_te
 figure()
 imagesc(log(M'))
 hold on
-for ii = 1:length(deleted_tracks)
+for ii = 1:1:length(deleted_tracks)
     temp = deleted_tracks(ii).Path; 
-    plot(temp(:,1),temp(:,2),'k'); 
+%     plot(temp(:,1),temp(:,2),'k'); 
+    hh = plot(temp(:,1),temp(:,2),'k','LineWidth',.5); hh.Color(4) = 0.9;
     hold on;
 %     pause();
 end
 set(gca,'YDir','normal') 
+
+%% density
+figure()
+tempp = [];  for ii = 1:length(deleted_tracks);  tempp = [tempp; deleted_tracks(ii).Path]; end
+[nn,cc] = hist3(temp,[50,50]);
+imagesc(cc{1},cc{2},nn')
+set(gca,'YDir','normal')
 
 %% sensory time series
 C_xyt = {};
@@ -158,7 +166,7 @@ set(gca,'YDir','normal')
 alpha = x(1);  kappa = (1/x(2))^0.5*(180/pi);  A = x(3);  B = x(4);
 %alpha = 1.1;  kappa = 0.1*(180/pi);  A = 0.4;  B = 20;
 test = [];
-C0 = 10000;
+C0 = 100000;
 origin = [target(1)/2,target(2)];
 target2 = target-[100,0];%origin+[500,0];%-[target(1)/2,target(2)];
 
@@ -166,12 +174,12 @@ allA_gen = [];
 allC_gen = [];
 allP_gen = [];
 allths_gen = [];
-for rep = 1:50
+for rep = 1:200
     
 Tl = 1000;
 dt = 1;
-vm = 5.0;  %should be adjusted with the velocity statistics~~ this is approximately 0.2mm X 
-vs = 0.5;
+vm = 6.0;  %should be adjusted with the velocity statistics~~ this is approximately 0.2mm X 
+vs = 1.5;
 tracks = zeros(Tl,2);
 tracks(1,:) = origin; %initial position
 tracks(2,:) = origin+randn(1,2)*vm*dt;
@@ -205,7 +213,7 @@ for t = 1+2:Tl
     
     vv = vm+vs*randn;
     ths(t) = ths(t-1)+dth*dt;
-    if ths(t)>180; ths(t) = ths(t)-180; end;  if ths(t)<-180; ths(t) = ths(t)+360; end  %within -180~180 degree range
+    %if ths(t)>180; ths(t) = ths(t)-180; end;  if ths(t)<-180; ths(t) = ths(t)+360; end  %within -180~180 degree range
     e1 = [1,0];
     vec = [tracks(t-1,1)  tracks(t-1,2)]-origin; %current vector
     theta = acosd(max(-1,min((vec*e1')/norm(vec)/norm(e1),1)));  %current angle
@@ -213,8 +221,8 @@ for t = 1+2:Tl
     R = [cos(theta*pi/180) sin(theta*pi/180); -sin(theta*pi/180) cos(theta*pi/180)];
     dxy = (R)*dd';
 
-    tracks(t,1) = tracks(t-1,1)+dxy(1)*dt;
-    tracks(t,2) = tracks(t-1,2)+dxy(2)*dt;
+    tracks(t,1) = tracks(t-1,1)+dd(1)*dt;  %dxy(1)*dt;
+    tracks(t,2) = tracks(t-1,2)+dd(2)*dt;  %dxy(2)*dt;
         
 end
 
