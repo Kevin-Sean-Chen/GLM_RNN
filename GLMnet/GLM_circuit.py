@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Apr 16 16:11:04 2020
+Created on Mon May 10 11:48:45 2021
 
 @author: kevin
 """
@@ -8,7 +8,6 @@ Created on Thu Apr 16 16:11:04 2020
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
-import dotmap as DotMap
 
 import seaborn as sns
 color_names = ["windows blue", "red", "amber", "faded green"]
@@ -16,334 +15,432 @@ colors = sns.xkcd_palette(color_names)
 sns.set_style("white")
 sns.set_context("talk")
 
-from pyglmnet import GLM, simulate_glm
-from pyglmnet import GLMCV
-from pyglmnet import GLM
-
 import matplotlib 
 matplotlib.rc('xtick', labelsize=20) 
 matplotlib.rc('ytick', labelsize=20) 
 
-#%matplotlib qt5
+# %% Circuit dynamics
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %% Circuit class
+class Circuit_dynamics(object):
+    def __init__(self, T, N, J, A, n_pump = 0, dt = 0.1):
+        time = np.arange(0,T,dt)
+        lt = len(time)
+        self.dt = dt
+        self.T = T
+        self.time = time
+        self.N = N
+        self.lt = lt
+        self.J = J
+        self.n_pump = n_pump
+        self.A = A
+        self.eps = 10**-15
+    
+    def LN(self, x):
+        """
+        logistic nonlinearity
+        """
+        #ln = np.exp(x)
+        ln = 1/(1+np.exp(-x*1.+self.eps))  #np.tanh(x)  #   #logsitic
+        return ln  #np.random.poisson(ln) #ln  #Poinsson emission
 
-# %%
-###############################################################################
-# %% neural circuit dynamics model
-###settings
-N = 3  #number of neurons
-dt = 0.1  #ms
-T = 10000  #total time
-time = np.arange(0,T,dt)   #time axis
-lt = len(time)
+    def spiking(self, ll, dt):
+        """
+        Given Poisson rate (spk per second) and time steps dt return binary process with the probability
+        """
+        N = len(ll)
+        spike = np.random.rand(N) < ll*dt  #for Bernouli process
+        #spike = np.random.poisson(ll*dt)
+        return spike
+    
+    def simulation(self):
+        """
+        Neural dynamics of the circuit model
+        """
+        #settings
+        dt, lt, N = self.dt, self.lt, self.N
+        x = np.zeros((N,lt))  #voltage
+        spk = np.zeros_like(x)  #spikes
+        syn = np.zeros_like(x)  #synaptic efficacy
+        rate = np.zeros_like(x)  #spike rate
+        x[:,0] = np.random.randn(N)*1
+        syn[:,0] = np.random.rand(N)
+#        stim = np.random.randn(lt)*self.A  #np.random.randn(N,lt)*20.  #common random stimuli
+        ###
+        stim = self.stimulate(self.n_pump, self.A)
+        ###
+        #biophysical parameters
+        J = self.J.T#connectivity matrix
+        noise = .1  #noise strength
+        taum = 5  #5 ms
+        taus = 50  #50 ms
+        E = 1
+        #iterations for neural dynamics
+        for tt in range(0,lt-1):
+            x[:,tt+1] = x[:,tt] + dt/taum*( -x[:,tt] + (np.matmul(J,self.LN(syn[:,tt]*x[:,tt]))) + stim[:,tt] + noise*np.random.randn(N)*np.sqrt(dt))
+            spk[:,tt+1] = self.spiking(self.LN(x[:,tt+1]),dt)
+            rate[:,tt+1] = self.LN(x[:,tt+1])
+            syn[:,tt+1] = 1#syn[:,tt] + dt*( (1-syn[:,tt])/taus - syn[:,tt]*E*spk[:,tt] )
+        return x, spk, rate, stim
+    
+    def stimulate(self,n_pump, A):
+        """
+        Implement pump-probe stimuluation protocol here
+        """
+        stim = np.zeros((self.N,self.lt))
+        ###general noise driven dynamics
+        if n_pump=='noise':
+            stim_temp = np.random.randn(self.lt)*A
+            stim = np.repeat(stim_temp,repeats=self.N).reshape(self.lt,self.N).T
+        elif n_pump=='sine':
+            stim_temp = np.sin(np.arange(self.lt)/A)
+            stim = np.repeat(stim_temp,repeats=self.N).reshape(self.lt,self.N).T
+        ###pump-probe use
+        else:
+            pos = np.where((self.time>500) & (self.time<510))[0]
+            stim[n_pump,pos] = A
+            pos = np.where((self.time>700) & (self.time<710))[0]
+            stim[n_pump,pos] = A
+            pos = np.where((self.time>900) & (self.time<910))[0]
+            stim[n_pump,pos] = A
+        return stim
+    
+    def flipkernel(self,k):
+        """
+        flipping kernel to resolve temporal direction
+        """
+        return np.squeeze(np.fliplr(k[None,:])) ###important for temporal causality!!!??
+    
+    def GLM_NL(self, x):
+        nl = np.exp(x)
+        #nl = 1/(1+np.exp(-x*1.+self.eps))
+        return nl
+    
+    def coupled_GLM(self, kernels, mus):
+        """
+        Ground truth set of coupled GLMS to produce spike trains
+        kernels should be (nb+1)xpad
+        return spiking probability, spikes, stimuli, and true kernels
+        """
+        #load dimension and stimuli
+        dt, lt, N = self.dt, self.lt, self.N
+        stim = self.stimulate(self.n_pump, self.A)
+        _,_,pad = kernels.shape  #N x (N+1) x pad
+        pad = pad #-1
+        
+        #kernels has dimension:  N x (N+1) x pad
+        Ks = self.flipkernel(kernels[:,0,:].T).T  #stimulu kernel
+        Hs = self.flipkernel(kernels[:,1:,:].T).T  #history kernel
+        mus = mus #kernels[:,0,0] #baseline
+        
+        #record GLM network spikes
+        spks = np.zeros((N,lt))  #recording all spikes
+        Psks = np.zeros((N,lt))  #recording all spiking probability
+        for tt in range(pad,lt):
+            Psks[:,tt] = self.GLM_NL( np.sum(Ks*stim[:,tt-pad:tt],axis=1) + mus + \
+                np.einsum('ijk,jk->i',  Hs, spks[:,tt-pad:tt]) )
+            spks[:,tt] = self.spiking(Psks[:,tt], dt)
+        
+        return Psks, spks, stim, kernels
 
-x = np.zeros((N,lt))  #voltage
-spk = np.zeros_like(x)  #spikes
-syn = np.zeros_like(x)  #synaptic efficacy
-rate = np.zeros_like(x)  #spike rate
-x[:,0] = np.random.randn(N)*1
-syn[:,0] = np.random.rand(N)
+
+# %% GLM inference
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+class GLM_inference(object):
+    #global wl
+    def __init__(self, Y, X, dt, pad, nb):
+        self.Y = Y
+        self.X = X
+        self.dt = dt
+        self.pad = pad
+        self.nb = nb
+        self.wl = 0 #for final calculation
+        self.eps = 10**-15
+        
+    def basis_function(self):
+        """
+        Raised cosine basis function to tile the time course of the response kernel
+        nkbins of time points in the kernel and nBases for the number of basis functions
+        """
+        nBases = self.nb
+        nkbins = self.pad
+        #nkbins = 10 #binfun(duration); # number of bins for the basis functions
+        ttb = np.tile(np.log(np.arange(0,nkbins)+1)/np.log(1.4),(nBases,1))  #take log for nonlinear time
+        dbcenter = nkbins / (nBases+int(nkbins/3)) # spacing between bumps
+        width = 5.*dbcenter # width of each bump
+        bcenters = 1.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
+        def bfun(x,period):
+            return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)  #raise-cosine function formula
+        temp = ttb - np.tile(bcenters,(nkbins,1)).T
+        BBstm = [bfun(xx,width) for xx in temp] 
+        basis = np.array(BBstm).T
+        #plt.plot(np.array(BBstm).T)
+        return basis
+    
+    def flipkernel(self,k):
+        """
+        flipping kernel to resolve temporal direction
+        """
+        return np.squeeze(np.fliplr(k[None,:])) ###important for temporal causality!!!??
+    
+    
+    def design_matrix(self, idd, cp_mode, basis_set=None):
+        """
+        idd:      int for neuron id
+        stim:     TxN stimuli
+        spk:      TxN spiking pattern
+        pad:      int for kernel width, or number of weight parameters
+        cp_mode:  binary indication for coupling or independent model
+        basis_set:DxB, where D is the kernel window and B is the number of basis used
+        """
+        spk = self.Y.T
+        stim = self.X.T
+        pad = self.pad
+        
+        T, N = spk.shape  #time and number of neurons
+        xx = stim[:,idd] #for input stimuli
+        D = pad  #pad for D length of kernel
+        y = spk  #spiking patterns
+        #y = spk[:,idd] #for self spike
+        #other_id = np.where(np.arange(N)!=idd)
+        #couple = spk[:,other_id]
+        
+        if basis_set is None:
+            if cp_mode==0:
+                X = sp.linalg.hankel(np.append(np.zeros(D-2),xx[:T-D+2]),xx[T-D+1:]) #make design matrix
+                X = np.concatenate((np.ones([T,1]),X),axis=1)  #concatenate with constant offset
+            elif cp_mode==1:
+                X = sp.linalg.hankel(np.append(np.zeros(D-2),xx[:T-D+2]),xx[T-D+1:])
+                for nn in range(N):
+                    yi = y[:,nn]
+                    Xi = sp.linalg.hankel(np.append(np.zeros(D-2),yi[:T-D+2]),yi[T-D+1:])  #add spiking history
+                    X = np.concatenate((X,Xi),axis=1)
+                X = np.concatenate((np.ones([T,1]),X),axis=1)
+        else:
+            basis = self.flipkernel(basis_set[:-1,:])  #the right temporal order here!
+            if cp_mode==0:
+                X = sp.linalg.hankel(np.append(np.zeros(D-2),xx[:T-D+2]),xx[T-D+1:])
+                X = X @ basis  #project to basis set
+                X = np.concatenate((np.ones([T,1]),X),axis=1)
+            elif cp_mode==1:
+                X = sp.linalg.hankel(np.append(np.zeros(D-2),xx[:T-D+2]),xx[T-D+1:])
+                X = X @ basis
+                for nn in range(N):
+                    yi = y[:,nn]
+                    Xi = sp.linalg.hankel(np.append(np.zeros(D-2),yi[:T-D+2]),yi[T-D+1:])
+                    Xi = Xi @ basis
+                    X = np.concatenate((X,Xi),axis=1)
+                X = np.concatenate((np.ones([T,1]),X),axis=1)      
+            
+        y = spk[:,idd]
+        self.xl = X.shape[1]  #length of total weight variables
+        return y, X
+    
+    def GLM_NL(self, x):
+        nl = np.exp(x)
+        #nl = 1/(1+np.exp(-x*1.+self.eps))
+        return nl 
+    
+    def Poisson_log_likelihood(self, w, Y, X, f=np.exp, Cinv=None):
+        """
+        Poisson GLM log likelihood.
+        f is exponential by default.
+        """
+        f = self.GLM_NL
+        dt = self.dt
+        # if no prior given, set it to zeros
+        if Cinv is None:
+            Cinv = np.zeros([np.shape(w)[0],np.shape(w)[0]])
+    
+        # evaluate log likelihood and gradient
+        ll = np.sum(Y * np.log(f(X@w)+self.eps) - f(X@w)*dt - sp.special.gammaln(Y+1) + Y*np.log(dt)) + 0.5*w.T@Cinv@w
+        #ll = np.sum(Y * np.log(f(X@w)+self.eps) - (1-Y) * np.log(1-f(X@w)+self.eps) )
+        #- sp.special.gammaln(Y+1) + Y*np.log(dt)) + 0.5*w.T@Cinv@w
+    
+        # return ll
+        return ll
+    
+    
+    def MAP_inerence(self, y, X, prior_w=None):
+        
+        D = X.shape[1]
+        # prior
+        if prior_w is None:
+            lambda_ridge = np.power(2.0,4)
+            lambda_ridge = 0.0
+            Cinv = lambda_ridge*np.eye(D)
+            Cinv[0,0] = 0.0 # no prior on bias
+        else:
+            Cinv = prior_w
+        # fit with MAP
+        res = sp.optimize.minimize(lambda w: -self.Poisson_log_likelihood(w,y,X,np.exp,Cinv), np.zeros([D,]),method='L-BFGS-B', tol=1e-4,options={'disp': True})
+        #w_map = res.x
+        
+        return res
+    
+    def MAP_decoding(w_map, xx, prior_x):
+        
+        """
+        Poisson GLM log likelihood.
+        f is exponential by default.
+        """
+        # if no prior given, set it to zeros
+        if Cinv is None:
+            Cinv = np.zeros([np.shape(w_map)[0],np.shape(w_map)[0]])
+        
+        # make design matrix X
+        D = len(w_map)
+        X = make_designX(xx,D)
+        # evaluate log likelihood and gradient
+        ll = np.sum(Y * np.log(f(X @ w_map)) - f(X @ w_map)*dt - sp.special.gammaln(Y+1) + Y*np.log(dt)) \
+        + 0.5*w_map.T @ Cinv @ w_map + 0.5*(xx-mu_x)[:,None].T @ (xx-mu_x)[:,None]*(sig_x)**-1
+    
+        # return ll
+        #return ll
+        
+        return X_hat
+    
+    def recover_kernel(self, basis, w_map):
+        B = self.nb
+        base = w_map[0]
+        Ks = np.reshape(w_map[1:],[int(len(w_map[1:])/B),B])
+        Ks = Ks @ basis.T
+        return Ks, base
+
+    def spiking(self, ll, dt):
+        """
+        Given Poisson rate (spk per second) and time steps dt return binary process with the probability
+        """
+        N = len(ll)
+        spike = np.random.rand(N) < ll*dt  #for Bernouli process
+        #spike = np.random.poisson(ll*dt)
+        return spike
+    
+    def Poisson_GLM(self, w, X):
+        """
+        w:  D length weight vector 
+        X:  TxD design matrix
+        dt: time steps for a bin
+        """
+        fx = self.GLM_NL(X @ w)
+        #np.exp(X @ w)
+        Y = self.spiking(fx,self.dt)
+        #np.random.poisson(fx*self.dt)
+        return Y, fx
+    
+    def use_pyGLM_inference():
+        return glm
+    
+# %% test analysis
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %% circuit spiking
 J = np.array([[6.8, -2.5, -2],\
               [-3, 7., -2],\
-              [-2.3, -2.5, 4.1]])
-J = J.T*2.  #connectivity matrix
-noise = 1.  #noise strength
-stim = np.random.randn(lt)*20  #np.random.randn(N,lt)*20.  #common random stimuli
-taum = 5  #5 ms
-taus = 50  #50 ms
-E = 1
+              [-2.3, -2.5, 4.1]])*1
+#J = np.array([[0, -1/3, 1/3],\
+#                      [-1/3 ,0 , -1/3],\
+#                      [-1/3, 1/3, 0]])
+J = np.array([[-.5,-0.9],[0.1,-.5]])
+C_ = Circuit_dynamics(T=1000, N=2, J=J, A=1, n_pump = 'sine', dt = 0.1)
+xx,ss,rr,stim = C_.simulation()
 
-eps = 10**-15
-def LN(x):
-    """
-    logistic nonlinearity
-    """
-    ln = 1/(1+np.exp(-x*1.+eps))   #logsitic
-#    ln = np.array([max(min(100,xx),0) for xx in x])  #ReLu
-#    ln = np.log(1+np.exp(x))  #sloft-max
-    return np.random.poisson(ln) #ln  #Poinsson emission
+# %% GLM inference
+pad = 50
+nb = 8
+GLM_ = GLM_inference(ss, stim, 0.1, pad, nb)
+basis = GLM_.basis_function()
+Y, X = GLM_.design_matrix(0, 1, basis)
+res = GLM_.MAP_inerence(Y, X, )
+Ks, bias = GLM_.recover_kernel(basis,res.x)
 
-def spiking(ll,dt):
-    """
-    Given Poisson rate (spk per second) and time steps dt return binary process with the probability
-    """
-    N = len(ll)
-    spike = np.random.rand(N) < ll*dt  #for Bernouli process
-    return spike
-
-###iterations for neural dynamics
-for tt in range(0,lt-1):
-    x[:,tt+1] = x[:,tt] + dt/taum*( -x[:,tt] + (np.matmul(J,LN(syn[:,tt]*x[:,tt]))) + stim[tt]*np.array([1,1,1]) + noise*np.random.randn(N)*np.sqrt(dt))
-    spk[:,tt+1] = spiking(LN(x[:,tt+1]),dt)
-    rate[:,tt+1] = LN(x[:,tt+1])
-    syn[:,tt+1] = 1#syn[:,tt] + dt*( (1-syn[:,tt])/taus - syn[:,tt]*E*spk[:,tt] )
-
-### plotting 
-plt.figure()
-plt.subplot(411)
-plt.imshow(x, aspect='auto');
-plt.subplot(412)
-plt.imshow(spk, aspect='auto');
-plt.subplot(413)
-plt.imshow(rate, aspect='auto');
-plt.xlim([0,time[-1]])
-plt.subplot(414)
-plt.plot(time, rate.T);
-plt.xlim([0,time[-1]])
-
-# %%
-###############################################################################
-# %% functions for GLM inference
-eps = 10**-15
-
-def neglog(theta, Y, X, pad, nb):
-    """
-    negative log-likelihood to optimize theta (parameters for kernel of all neurons)
-    with neural responses time length T x N neurons, and the padding window size
-    return the neg-ll value to be minimized
-    """
-    k = kernel(theta,pad)
-    v = LN(X @ k)  #nonlinear function
-    nl_each = -(np.matmul(Y.T, np.log(v+eps)) - np.sum(v))  #Poisson negative log-likelihood
-    #nl_each = -( np.matmul(Y.T, np.log(v+eps)) - np.matmul( (1-Y).T, np.log(1-v+eps)) )  #Bernouli process of binary spikes
-    nl = nl_each#.sum()
-    return nl
-
-def flipkernel(k):
-    """
-    flipping kernel to resolve temporal direction
-    """
-    return np.squeeze(np.fliplr(k[None,:])) ###important for temporal causality!!!??
-    
-def kernel(theta, pad):
-    """
-    Given theta weights and the time window for padding,
-    return the kernel contructed with basis function
-    """
-    nb = len(theta)
-    basis = basis_function1(pad, nb)  #construct basises
-    k = np.dot(theta, basis.T)  #construct kernels with parameter-weighted sum
-    return flipkernel(k)
-
-def basis_function1(nkbins, nBases):
-    """
-    Raised cosine basis function to tile the time course of the response kernel
-    nkbins of time points in the kernel and nBases for the number of basis functions
-    """
-    #nBases = 3
-    #nkbins = 10 #binfun(duration); # number of bins for the basis functions
-    ttb = np.tile(np.log(np.arange(0,nkbins)+1)/np.log(1.4),(nBases,1))  #take log for nonlinear time
-    dbcenter = nkbins / (nBases+int(nkbins/3)) # spacing between bumps
-    width = 5.*dbcenter # width of each bump
-    bcenters = 1.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
-    def bfun(x,period):
-        return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)  #raise-cosine function formula
-    temp = ttb - np.tile(bcenters,(nkbins,1)).T
-    BBstm = [bfun(xx,width) for xx in temp] 
-    #plt.plot(np.array(BBstm).T)
-    return np.array(BBstm).T
-
-def basis_function2(n, k, tl):
-    """
-    More biophysical delayed function, given a width parameter n, location of kernel k,
-    and the time window tl (n=5-10 is a normal choice)
-    """
-    beta = np.exp(n)
-    fkt = beta*(tl/k)**n*np.exp(-n*(tl/k))
-    return fkt
-
-def build_matrix(stimulus, spikes, pad, couple):
-    """
-    Given time series stimulus (T time x N neurons) and spikes of the same dimension and pad length,
-    build and return the design matrix with stimulus history, spike history od itself and other neurons
-    """
-    T, N = spikes.shape  #neurons and time
-    SN = stimulus.shape[0]  #if neurons have different input (ignore this for now)
-    
-    # Extend Stim with a padding of zeros
-    Stimpad = np.concatenate((stimulus,np.zeros((pad,1))),axis=0)
-    # Broadcast a sampling matrix to sample Stim
-    S = np.arange(-pad+1,1,1)[np.newaxis,:] + np.arange(0,T,1)[:,np.newaxis]
-    X = np.squeeze(Stimpad[S])
-    if couple==0:
-        X = X.copy()
-        X = np.concatenate((np.ones((T,1)), X),axis=1)
-    elif couple==1:
-        X_stim = np.concatenate((np.ones((T,1)), X),axis=1)  #for DC component that models baseline firing
-    #    h = np.arange(1, 6)
-    #    padding = np.zeros(h.shape[0] - 1, h.dtype)
-    #    first_col = np.r_[h, padding]
-    #    first_row = np.r_[h[0], padding]
-    #    H = linalg.toeplitz(first_col, first_row)
-        
-        # Spiking history and coupling
-        spkpad = np.concatenate((spikes,np.zeros((pad,N))),axis=0)
-        # Broadcast a sampling matrix to sample Stim
-        S = np.arange(-pad+1,1,1)[np.newaxis,:] + np.arange(0,T,1)[:,np.newaxis]
-        X_h = [np.squeeze(spkpad[S,[i]]) for i in range(0,N)]
-        # Concatenate the neuron's history with old design matrix
-        X_s_h = X_stim.copy()
-        for hh in range(0,N):
-            X_s_h = np.concatenate((X_s_h,X_h[hh]),axis=1)
-        X = X_s_h.copy()
-#        #print(hh)
-    
-    return X
-
-def build_convolved_matrix(stimulus, spikes, Ks, couple):
-    """
-    Given stimulus and spikes, construct design matrix with features being the value projected onto kernels in Ks
-    stimulus: Tx1
-    spikes: TxN
-    Ks: kxpad (k kernels with time window pad)
-    couple: binary option with (1) or without (0) coupling
-    """
-    T, N = spikes.shape
-    k, pad = Ks.shape
-    
-    Stimpad = np.concatenate((stimulus,np.zeros((pad,1))),axis=0)
-    S = np.arange(-pad+1,1,1)[np.newaxis,:] + np.arange(0,T,1)[:,np.newaxis]
-    Xstim = np.squeeze(Stimpad[S])
-    Xstim_proj = np.array([Xstim @ Ks[kk,:] for kk in range(k)]).T
-    
-    if couple==0:
-        X = np.concatenate((np.ones((T,1)), Xstim_proj),axis=1)
-    elif couple==1:
-        spkpad = np.concatenate((spikes,np.zeros((pad,N))),axis=0)
-        Xhist = [np.squeeze(spkpad[S,[i]]) for i in range(0,N)]
-        Xhist_proj = [np.array([Xhist[nn] @ Ks[kk,:] for kk in range (k)]).T for nn in range(N)]
-        
-        X = Xstim_proj.copy()
-        X = np.concatenate((np.ones((T,1)), X),axis=1)
-        for hh in range(0,N):
-            X = np.concatenate((X,Xhist_proj[hh]),axis=1)
-    return X
-
-
-# %%
-###############################################################################
-# %% inference method (single)
-nneuron = 2
-pad = 100  #window for kernel
-nbasis = 7  #number of basis
-couple = 1  #wether or not coupling cells considered
-Y = np.squeeze(rate[nneuron,:])  #spike train of interest
-Ks = (np.fliplr(basis_function1(pad,nbasis).T).T).T  #basis function used for kernel approximation
-stimulus = stim[:,None]  #same stimulus for all neurons
-X = build_convolved_matrix(stimulus, rate.T, Ks, couple)  #design matrix with features projected onto basis functions
-###pyGLMnet function with optimal parameters
-glm = GLMCV(distr="binomial", tol=1e-5, eta=1.0,
-            score_metric="deviance",
-            alpha=0., learning_rate=1e-6, max_iter=1000, cv=3, verbose=True)  #important to have v slow learning_rate
-glm.fit(X, Y)
-
-# %% direct simulation
-yhat = simulate_glm('binomial', glm.beta0_, glm.beta_, X)  #simulate spike rate given the firring results
-plt.figure()
-plt.plot(Y*1.)  #ground truth
-plt.plot(yhat,'--')
-
-# %%reconstruct kernel
-theta = glm.beta_
-dc_ = theta[0]
-theta_ = theta[1:]
-if couple == 1:
-    theta_ = theta_.reshape(nbasis,N+1)  #nbasis times (stimulus + N neurons)
-    allKs = np.array([theta_[:,kk] @ Ks for kk in range(N+1)])
-elif couple == 0:
-    allKs = Ks.T @ theta_
-
-plt.figure()
-plt.plot(allKs.T)
-
-# %%
-# %% inference method (all-together)
-allK_rec = np.zeros((N,N+1,pad))
-all_yhat = np.zeros((N,lt))
-X_bas_n = build_convolved_matrix(stim[:,None], rate.T, Ks, couple)  #design matrix projected to basis functions
+# %% analysis
+N = 2
+T = 1000
+dt = 0.1
+lt =int(T/dt)
+ss_recs = np.zeros((N,lt))
+#plt.figure()
+fig, axs = plt.subplots(N, N+1)
 for nn in range(N):
-    Yn = rate[nn,:]  #nn-th neuron
-    glm = GLMCV(distr="binomial", tol=1e-5,
-            score_metric="deviance",
-            alpha=0., learning_rate=1e-6, max_iter=1000, cv=3, verbose=True)
-    glm.fit(X_bas_n, Yn)
-    ###store kernel
-    theta_rec_n = glm.beta_[1:]
-    theta_rec_n = theta_rec_n.reshape(N+1,nbasis)
-    for kk in range(N+1):
-        allK_rec[nn,kk,:] = np.dot(theta_rec_n[kk,:], Ks)   #reconstructing all kernels
-    ###store prediction
-    all_yhat[nn,:] = simulate_glm('binomial', glm.beta0_, glm.beta_, X_bas_n)
+    Y, X = GLM_.design_matrix(nn, 1, basis)
+    res = GLM_.MAP_inerence(Y, X, )
+    Ks, bias = GLM_.recover_kernel(basis,res.x)
+    for jj in range(0,N+1):
+        axs[nn, jj].plot(Ks[jj,:])
     
-# %% reconstruct output
+    ss_recs[nn,:],fx = GLM_.Poisson_GLM(res.x, X)
+    
+
+# %% goodness of fit
+#check that spike train can be recovered!
+#Y_rec = GLM_.Poisson_GLM(res.x, X)
 plt.figure()
 plt.subplot(211)
-plt.imshow(rate, aspect='auto')
+plt.imshow(ss,aspect='auto')
 plt.subplot(212)
-plt.imshow(all_yhat,aspect='auto')
+ss_recs[ss_recs>1] = 1
+plt.imshow(ss_recs,aspect='auto')
 
-# %% reconstruct kernels
-nneuron = 1
-K_rec_norm = np.array([allK_rec[nneuron,ii,:]/np.linalg.norm(allK_rec[nneuron,ii,:]) for ii in range(N+1)])
-plt.figure()
-plt.plot(K_rec_norm.T)
-
-# %% reconstruct all kernels
-plt.figure()
-plt.plot(np.squeeze(allK_rec[:,0,:]).T)
-plt.figure()
-kk = 0
-for jj in range(0,N):
-    for ii in range(0,N):
-        plt.subplot(3,3,kk+1)
-        plt.plot(allK_rec[jj,ii+1,:])
-        kk = kk+1
-
-# %% Scaling
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-def sim_circuit(lt):
-    """
-    Exact same model as above but put in function for to scan through different lengths
-    """
-    x = np.zeros((N,lt))  #voltage
-    spk = np.zeros_like(x)  #spikes
-    rate = np.zeros_like(x)  #spike rate
-    x[:,0] = np.random.randn(N)*1
-    stim = np.random.randn(lt)*20  #np.random.randn(N,lt)*20.  #common random stimuli
-    
-    ###iterations for neural dynamics
-    for tt in range(0,lt-1):
-        x[:,tt+1] = x[:,tt] + dt/taum*( -x[:,tt] + (np.matmul(J,LN(1*x[:,tt]))) + stim[tt]*np.array([1,1,1]) + noise*np.random.randn(N)*np.sqrt(dt))
-        spk[:,tt+1] = spiking(LN(x[:,tt+1]),dt)
-        rate[:,tt+1] = LN(x[:,tt+1])
-    return rate, stim
-
-def comp_varexp(Y,S,nneuron):
-    """
-    Compute variance explained from the GLM results, with parameters set above
-    """
-    y = np.squeeze(Y[nneuron,:])  #spike train of interest
-    stimulus = S[:,None]  #same stimulus for all neurons
-    X = build_convolved_matrix(stimulus, Y.T, Ks, couple)  #design matrix with features projected onto basis functions
-    glm = GLMCV(distr="binomial", tol=1e-5, eta=1.0,
-                score_metric="deviance",
-                alpha=0., learning_rate=1e-6, max_iter=1000, cv=3, verbose=True)  #important to have v slow learning_rate
-    glm.fit(X, y)
-    yhat = simulate_glm('binomial', glm.beta0_, glm.beta_, X)  #simulate spike rate given the firring results
-    varexp = np.corrcoef(y,yhat)
-    return varexp
-
-lts = np.array([200,500,1000,5000,10000,20000])
-VARS = np.zeros((N,len(lts)))
-Y, S = sim_circuit(20000)
-for nn in range(N):
-    for ti,tt in enumerate(lts):
-#        Y, S = sim_circuit(tt)
-        varexp = comp_varexp(Y[:,:tt],S[:tt],nn)
-        VARS[nn,ti] = varexp[0][1]
 
 # %%
-plt.figure()
-plt.plot(lts,VARS.T,'-o')
-plt.xlabel('length of simulation')
-plt.ylabel('variance explained')
+###############################################################################
+# %% with ground truth kernels
+T = 1000
+dt = 0.1
+N = 2
+pad = 50
+nb = 8
+GLM_ = GLM_inference(ss, stim, 0.1, pad, nb)
+basis = GLM_.basis_function()
+kernels = np.zeros((N,N+1,pad))
+for ii in range(N):
+    for jj in range(N+1):
+        #wks = np.random.randn(nb)*.05
+        wks = np.array([-0.1,1,0.5,0.1,0.1,0,0,0])*.1
+        kernels[ii,jj,:] = np.dot(wks,basis.T) #- np.abs(np.sum(np.dot(wks,basis.T)))
+        if ii+1==jj:  #diagonals
+            #wks = np.arange(nb,0,-1)*.1
+            wks = np.array([1,-0.9,-0.5,-0.1,0.1,0,0,0])*.5
+            kernels[ii,jj,:] = np.dot(wks,basis.T) #- np.abs(np.sum(np.dot(wks,basis.T)))
+mus = np.random.randn(N)
+#kernels[:,0,-1] = mus
+C_ = Circuit_dynamics(T=T, N=2, J=None, A=.1, n_pump = 'noise', dt = dt)
+Psks, spks, stim, kernels = C_.coupled_GLM(kernels, mus)
 
+plt.figure()
+plt.plot(spks.T)
+# %%
+GLM_ = GLM_inference(spks, stim, 0.1, pad, nb)
+#Y, X = GLM_.design_matrix(0, 1, basis)
+#res = GLM_.MAP_inerence(Y, X, )
+#Ks, bias = GLM_.recover_kernel(basis,res.x)
+
+# %% analysis
+spk_recs = np.zeros((N,int(T/dt)))
+#plt.figure()
+fig, axs = plt.subplots(N, N+1)
+for nn in range(N):
+    Y, X = GLM_.design_matrix(nn, 1, basis)
+    res = GLM_.MAP_inerence(Y, X, )
+    Ks, bias = GLM_.recover_kernel(basis,res.x)
+    for jj in range(0,N+1):
+        axs[nn, jj].plot(kernels[nn,jj,:])  #true kernel
+        axs[nn, jj].plot(Ks[jj,:],'--')  #infererred kernel
+    print('inferred: ', bias)
+    print('ture baseline:', mus[nn])
+    
+    spk_recs[nn,:],_ = GLM_.Poisson_GLM(res.x, X)
+
+plt.figure()
+plt.subplot(211)
+plt.imshow(spks,aspect='auto')
+plt.subplot(212)
+ss_recs[spk_recs>1] = 1
+plt.imshow(spk_recs,aspect='auto')
+
+# %% encoding & decoding
+#vary input end to MAP for decoding
+
+
+# %% NL dynamical tasks
+#stability and others~~

@@ -26,18 +26,21 @@ matplotlib.rc('ytick', labelsize=20)
 
 #%matplotlib qt5
 # %% parameters
-N = 10  #number of neurons
-p = 1  #sparsity of connection
+N = 400  #number of neurons
+p = .5  #sparsity of connection
 g = 1.5  # g greater than 1 leads to chaotic networks.
 alpha = 1.0  #learning initial constant
 dt = 0.1
-nsecs = 1500
+nsecs = 500
 learn_every = 2  #effective learning rate
 
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 M = np.random.randn(N,N)*g*scale
 sparse = np.random.rand(N,N)
-M[sparse>p] = 0
+#M[sparse>p] = 0
+mask = np.random.rand(N,N)
+mask[sparse>p] = 0
+mask[sparse<=p] = 1
 
 nRec2Out = N
 wo = np.zeros((nRec2Out,1))
@@ -48,13 +51,13 @@ simtime = np.arange(0,nsecs,dt)
 simtime_len = len(simtime)
 
 ###target pattern
-amp = 1.3;
+amp = 0.7;
 freq = 1/60;
 ft = (amp/1.0)*np.sin(1.0*np.pi*freq*simtime) + \
-     (amp/2.0)*np.sin(2.0*np.pi*freq*simtime) + \
-     (amp/6.0)*np.sin(3.0*np.pi*freq*simtime)# + \
-     #(amp/3.0)*np.sin(4.0*np.pi*freq*simtime)
-ft[ft<0] = 0
+    (amp/2.0)*np.sin(2.0*np.pi*freq*simtime) + \
+    (amp/6.0)*np.sin(3.0*np.pi*freq*simtime) + \
+    (amp/3.0)*np.sin(4.0*np.pi*freq*simtime)
+#ft[ft<0] = 0
 ft = ft/1.5
 
 wo_len = np.zeros((1,simtime_len))    
@@ -74,27 +77,31 @@ ti = 0
 P = (1.0/alpha)*np.eye(nRec2Out)
 for t in range(len(simtime)-1):
     ti = ti+1
-    x = (1.0-dt)*x + M @ (r*dt) + wf * (z*dt)
+    x = (1.0-dt)*x + M @ (r*dt) #+ wf * (z*dt)
     r = np.tanh(x)
     rt[:,t] = r[:,0]  #xt[:,t] = x[:,0]
     z = wo.T @ r
     
     if np.mod(ti, learn_every) == 0:
-    	k = P @ r;
-    	rPr = r.T @ k
-    	c = 1.0/(1.0 + rPr)
-    	P = P - k @ (k.T * c)  #projection matrix
+        k = P @ r;
+        rPr = r.T @ k
+        c = 1.0/(1.0 + rPr)
+        P = P - k @ (k.T * c)  #projection matrix
         
-    	# update the error for the linear readout
-    	e = z-ft[ti]
-    	
-    	# update the output weights
-    	dw = -e*k*c
-    	wo = wo + dw
+        # update the error for the linear readout
+        e = z-ft[ti]
+        
+        # update the output weights
+        dw = -e*k*c
+        wo = wo + dw
         
         # update the internal weight matrix using the output's error
-    	M = M + np.repeat(dw,N).reshape(N,N)  #np.repeat(dw.T, N, 1);
-        
+        M = M + np.repeat(dw,N,1).T#0.0001*np.outer(wf,wo)
+        #np.repeat(dw,N,1).T#.reshape(N,N).T
+        #np.outer(wf,wo)
+        #np.repeat(dw.T, N, 1);
+        M = M*mask           
+
     # Store the output of the system.
     zt[0,ti] = np.squeeze(z)
     wo_len[0,ti] = np.sqrt(wo.T @ wo)	
@@ -117,8 +124,8 @@ r = np.tanh(x)
 z = z0
 for t in range(len(simtime)-1):
     ti = ti+1 
-
-    x = (1.0-dt)*x + M @ (r*dt) + wf * (z*dt)
+    
+    x = (1.0-dt)*x + M @ (r*dt) #+ wf * (z*dt)
     r = np.tanh(x)
     z = wo.T @ r
 
@@ -126,7 +133,9 @@ for t in range(len(simtime)-1):
 
 zpt = np.squeeze(zpt)
 plt.figure()
+plt.plot(ft)
 plt.plot(zpt)
+
 # %%
 ###############################################################################
 # %% inference
@@ -165,5 +174,59 @@ elif couple == 0:
 
 plt.figure()
 plt.plot(allKs.T)
+
+
+# %% FORCE with GLM-net
+###############################################################################
+###############################################################################
+# %% setup
+N = 50
+T = 100
+dt = 0.1
+time = np.arange(0,T,dt)
+stim = np.random.randn(len(time))*0.1
+stimulus = np.repeat(stim[:,None],3,axis=1).T #identical stimulus for all three neurons for now
+nbasis = 7
+pad = 100
+nkernels = N**2+N  #xN coupling and N stimulus filters
+thetas = np.random.randn(nkernels, nbasis)  #weights on kernels
+#Ks = basis_function1(pad, nbasis)
+Ks = (np.fliplr(basis_function1(pad,nbasis).T).T).T
+allK = np.zeros((nkernels,pad))  #number of kernels x length of time window
+for ii in range(nkernels):
+    allK[ii,:] = np.dot(thetas[ii,:], Ks)
+allK = allK.reshape(N,N+1,pad)
+
+# %% learning
+plt.figure()
+ti = 0
+P = (1.0/alpha)*np.eye(nRec2Out)
+for t in range(len(simtime)-1):
+    ti = ti+1
+    x = (1.0-dt)*x + M @ (r*dt)
+    ## make this temporal kernel version!
+    r = np.tanh(x)
+    rt[:,t] = r[:,0]  #xt[:,t] = x[:,0]
+    z = wo.T @ r
+    
+    if np.mod(ti, learn_every) == 0:
+    	k = P @ r;
+    	rPr = r.T @ k
+    	c = 1.0/(1.0 + rPr)
+    	P = P - k @ (k.T * c)  #projection matrix
+        
+    	# update the error for the linear readout
+    	e = z-ft[ti]
+    	
+    	# update the output weights
+    	dw = -e*k*c
+    	wo = wo + dw
+        
+        # update the internal weight matrix using the output's error
+    	M = M + np.repeat(dw,N).reshape(N,N)  #np.repeat(dw.T, N, 1);
+        
+    # Store the output of the system.
+    zt[0,ti] = np.squeeze(z)
+    wo_len[0,ti] = np.sqrt(wo.T @ wo)	
 
 
