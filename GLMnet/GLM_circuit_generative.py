@@ -172,12 +172,12 @@ Iapp2 = np.array([30, 0])
 #Iapp1 = np.array([ 1, 0])
 #Iapp2 = np.array([2, 0])
 ### Oscillation attractor ###
-Ithresh = np.array([8, 20]);
-W = np.array([[2.2, -1.3],
-              [1.2, -0.1]])  #weight matrix
-rinit1 = np.array([80, 0])
-Iapp1 = np.array([ 0, 0])
-Iapp2 = np.array([-10, 0])
+#Ithresh = np.array([8, 20]);
+#W = np.array([[2.2, -1.3],
+#              [1.2, -0.1]])  #weight matrix
+#rinit1 = np.array([80, 0])
+#Iapp1 = np.array([ 0, 0])
+#Iapp2 = np.array([-10, 0])
 
 #initialization
 r = np.zeros((N,lt))    # array of rate of each cell as a function of time
@@ -188,7 +188,7 @@ tau = 0.01;             # base time constant for changes of rate
 Iapp = np.zeros((N,lt))      # Array of time-dependent and unit-dependent current
 Ion1 = 1;                    # Time to switch on
 Ion2 = 2;                    # Time to switch on
-Idur = 0.2;                  # Duration of current
+Idur = 0.1;                  # Duration of current
 
 non1 = round(Ion1/dt)            # Time step to switch on current
 noff1 = round((Ion1+Idur)/dt)    # Time step to switch off current
@@ -221,7 +221,7 @@ tau_m = 0.01  #membrane time constant  #0.01
 tau_r = 0.05  #synaptic rise time scale  #0.05
 tau_d = 0.01   #synaptic decay time  #0.01
 v_the = 9.5    #spik threshold  #13  #7.5  #9.5
-v_res = -1     #reset potential after spiking  #-10 #-1 #-1
+v_res = -5     #reset potential after spiking  #-10 #-1 #-1
 lamb = 35    #factor from rate to spiking networks  #140  #70  #35
 vm = np.zeros((N,lt))  #for membrane potential
 rs = np.zeros((N,lt))  #for spike rate
@@ -330,7 +330,7 @@ def build_convolved_matrix(stimulus, spikes, Ks, couple):
     return X
 
 # %% inference method (single)
-nneuron = 1
+nneuron = 0
 pad = 100  #window for kernel
 nbasis = 7  #number of basis
 couple = 1  #wether or not coupling cells considered
@@ -349,7 +349,7 @@ yhat = simulate_glm('binomial', glm.beta0_, glm.beta_, X)  #simulate spike rate 
 plt.figure()
 plt.plot(time,Y*1.,label='data')  #ground truth
 plt.plot(time,yhat,'--',label='GLM')
-plt.plot(time,1-np.exp(-10*yhat))
+plt.plot(time,1-np.exp(-10*yhat),'-k')
 plt.xlabel('time (s)',fontsize=30)
 plt.ylabel('activity',fontsize=30)
 plt.legend(fontsize=25)
@@ -376,4 +376,12 @@ elif couple == 0:
 plt.figure()
 plt.plot(allKs.T)
 
-
+# %% test with GLM_circuit class inference
+pad = 100
+nb = 8
+GLM_ = GLM_inference(spk, Iapp, 0.1, pad, nb)
+basis = GLM_.basis_function()
+Y, X = GLM_.design_matrix(0, 1, basis)
+res = GLM_.MAP_inerence(Y, X, )
+Ks, bias = GLM_.recover_kernel(basis,res.x)
+spk_recs,_ = GLM_.Poisson_GLM(res.x, X)

@@ -23,8 +23,8 @@ def temporal_kernel(alpha,tau):
     """
     D_tau = alpha*np.exp(-alpha*tau)*((alpha*tau)**5/math.factorial(5) - (alpha*tau)**7/math.factorial(7))
     return D_tau
-tt = np.linspace(0,10,10/0.6)
-plt.plot(tt,temporal_kernel(2.,tt),'-o')
+#tt = np.linspace(0,10,10/0.6)
+#plt.plot(tt,temporal_kernel(2.,tt),'-o')
 
 #check with auto-correlation in time series
 def autocorr(x):
@@ -43,7 +43,7 @@ def d_theta(K_dcp, dc_perp, K, K_dc, dC):
     '''
     wv = np.dot(K_dcp,dc_perp) + K*np.random.randn()  #weathervaning strategy
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003  #sigmoidal function with parameters w
-    P_event = 5*0.023/(1 + np.exp(np.dot(K_dc,dC/dt))) + 0.005  #less parameter version
+    P_event = 5*0.023/(1 + np.exp(np.dot(K_dc,dC/dt))) + 0.00  #less parameter version
     if np.random.rand() < P_event:
         beta = 1
     else:
@@ -85,7 +85,7 @@ duT = 60*60*3  #equilibrium time
 d = 0.18  #difussion coefficient of butanone...
 
 #chemotaxis strategy parameter
-K_win = np.linspace(0,6,6/0.6)
+K_win = np.linspace(0,6/0.6,6)
 scaf = 10  #scale factor
 tempk = temporal_kernel(4.,K_win)/np.linalg.norm(temporal_kernel(4.,K_win))
 K_dc = 100 *(tempk)+.0  #random-turning kernel (biphasic form, difference of two gammas)
@@ -272,7 +272,7 @@ def generate_noise(NN):
 
 # %%
 ###generating data
-data_th,data_dcp,data_dc = generate_noise(5)
+data_th,data_dcp,data_dc = generate_noise(25)
 
 
 # %%
@@ -304,6 +304,7 @@ plt.legend()
 
 # %%
 ###check sigmoid curve
+dc_n = data_dc.copy()
 plt.figure()
 xp = np.linspace(-0.5, 0.5, 1000)
 rescl =np.linalg.norm(K_dc)/np.linalg.norm(recKdc)  #use this before learning the scale factor (it will be exactly the scale factor above)

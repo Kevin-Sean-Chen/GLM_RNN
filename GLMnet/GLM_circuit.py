@@ -142,6 +142,88 @@ class Circuit_dynamics(object):
             spks[:,tt] = self.spiking(Psks[:,tt], dt)
         
         return Psks, spks, stim, kernels
+    
+    
+    def simulation_pattern(self,model):
+        """
+        ...
+        """
+        #time course and network
+        dt, lt, N = self.dt, self.lt, self.N
+
+        if model=='bistable':
+            ### Bistable ###
+            Ithresh = np.array([5, 5]);
+            W = np.array([[1.1, -0.15],
+                          [-0.15, 1.1]])  #weight matrix
+            rinit1 = np.array([50, 55])
+            Iapp1 = np.array([ 0, 30])
+            Iapp2 = np.array([30, 0])
+        elif model=='line':
+            ### Line attractor ###
+            Ithresh = np.array([-20, -20]);
+            W = np.array([[0.7, -0.3],
+                          [-0.3, 0.7]])  #weight matrix
+            rinit1 = np.array([30, 75])
+            Iapp1 = np.array([ 1, 0])
+            Iapp2 = np.array([2, 0])
+        elif model=='oscillation':
+            ### Oscillation attractor ###
+            Ithresh = np.array([8, 20]);
+            W = np.array([[2.2, -1.3],
+                          [1.2, -0.1]])  #weight matrix
+            rinit1 = np.array([80, 0])
+            Iapp1 = np.array([ 0, 0])
+            Iapp2 = np.array([-10, 0])
+            
+        #initialization
+        r = np.zeros((N,lt))    # array of rate of each cell as a function of time
+        rmax = 100;             # maximum firing rate
+        tau = 0.01;             # base time constant for changes of rate
+        
+        #stimuli
+        Iapp = np.zeros((N,lt))      # Array of time-dependent and unit-dependent current
+        Ion1 = 1;                    # Time to switch on
+        Ion2 = 2;                    # Time to switch on
+        Idur = 0.1;                  # Duration of current
+        
+        non1 = round(Ion1/dt)            # Time step to switch on current
+        noff1 = round((Ion1+Idur)/dt)    # Time step to switch off current
+        non2 = round(Ion2/dt)            # Time step to switch on current
+        noff2 = round((Ion2+Idur)/dt)    # Time step to switch off current
+        
+        Iapp[:,non1:noff1] = np.einsum('ij,jk->jk',Iapp1[None,:],np.ones((2,noff1-non1)))
+        Iapp[:,non2:noff2] = np.einsum('ij,jk->jk',Iapp2[None,:],np.ones((2,noff2-non2)))
+        
+        r[:,0] = rinit1                # Initialize firing rate
+        
+        #spiking network
+        tau_m = 0.01  #membrane time constant  #0.01
+        tau_r = 0.05  #synaptic rise time scale  #0.05
+        tau_d = 0.01   #synaptic decay time  #0.01
+        v_the = 9.5    #spik threshold  #13  #7.5  #9.5
+        v_res = -1     #reset potential after spiking  #-10 #-1 #-1
+        lamb = 35    #factor from rate to spiking networks  #140  #70  #35
+        vm = np.zeros((N,lt))  #for membrane potential
+        rs = np.zeros((N,lt))  #for spike rate
+        ss = np.zeros((N,lt))  #for synaptic input
+        spk = np.zeros((N,lt)) #for spikes
+        for tt in range(1,lt):
+            #neural dynamics
+            vm[:,tt] = vm[:,tt-1] + dt*(1/tau_m)*(-vm[:,tt-1] + lamb*W @ rs[:,tt-1] + Iapp[:,tt-1]*5+10) #,embrane potential
+            rs[:,tt] = rs[:,tt-1] + dt*(-rs[:,tt-1]/tau_d + ss[:,tt-1])  #spike rate
+            ss[:,tt] = ss[:,tt-1] + dt*(-ss[:,tt-1]/tau_r + 1/(tau_d*tau_r)*spk[:,tt-1])  #synaptic input
+            #spiking process
+            poss = np.where(vm[:,tt]>v_the)[0]  #recording spikes
+            if len(poss)>0:
+                spk[poss,tt] = 1
+            posr = np.where(spk[:,tt-1]>0)[0]  #if spiked
+            Vmask = np.ones(N)
+            if len(posr)>0:
+                vm[posr,tt] = v_res  #reseting spiked neurons
+                spk[posr,tt] = 0
+        
+        return vm, spk, rs, Iapp
 
 
 # %% GLM inference
@@ -341,22 +423,23 @@ J = np.array([[6.8, -2.5, -2],\
 #                      [-1/3 ,0 , -1/3],\
 #                      [-1/3, 1/3, 0]])
 J = np.array([[-.5,-0.9],[0.1,-.5]])
-C_ = Circuit_dynamics(T=1000, N=2, J=J, A=1, n_pump = 'sine', dt = 0.1)
-xx,ss,rr,stim = C_.simulation()
+#T, N, dt = 1000, 2, 0.1
+#C_ = Circuit_dynamics(T=T, N=N, J=J, A=1, n_pump = 'sine', dt = dt)
+#xx,ss,rr,stim = C_.simulation()
+T, N, dt = 3, 2, 0.001
+C_ = Circuit_dynamics(T=3, N=2, J=J, A=1, n_pump = 'sine', dt = dt)
+xx,ss,rr,stim = C_.simulation_pattern('bistable')
 
 # %% GLM inference
 pad = 50
 nb = 8
-GLM_ = GLM_inference(ss, stim, 0.1, pad, nb)
+GLM_ = GLM_inference(ss, stim, dt, pad, nb)
 basis = GLM_.basis_function()
 Y, X = GLM_.design_matrix(0, 1, basis)
 res = GLM_.MAP_inerence(Y, X, )
 Ks, bias = GLM_.recover_kernel(basis,res.x)
 
 # %% analysis
-N = 2
-T = 1000
-dt = 0.1
 lt =int(T/dt)
 ss_recs = np.zeros((N,lt))
 #plt.figure()
@@ -376,10 +459,12 @@ for nn in range(N):
 #Y_rec = GLM_.Poisson_GLM(res.x, X)
 plt.figure()
 plt.subplot(211)
-plt.imshow(ss,aspect='auto')
+#plt.imshow(ss,aspect='auto')
+plt.plot(ss.T,linewidth=3)
 plt.subplot(212)
 ss_recs[ss_recs>1] = 1
-plt.imshow(ss_recs,aspect='auto')
+#plt.imshow(ss_recs,aspect='auto')
+plt.plot(ss_recs.T,linewidth=3)
 
 
 # %%
@@ -435,7 +520,7 @@ plt.figure()
 plt.subplot(211)
 plt.imshow(spks,aspect='auto')
 plt.subplot(212)
-ss_recs[spk_recs>1] = 1
+#ss_recs[spk_recs>1] = 1
 plt.imshow(spk_recs,aspect='auto')
 
 # %% encoding & decoding
