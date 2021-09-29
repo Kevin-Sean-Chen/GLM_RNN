@@ -16,17 +16,13 @@ colors = sns.xkcd_palette(color_names)
 sns.set_style("white")
 sns.set_context("talk")
 
-from pyglmnet import GLM, simulate_glm
-from pyglmnet import GLMCV
-from pyglmnet import GLM
-
 import matplotlib 
 matplotlib.rc('xtick', labelsize=20) 
 matplotlib.rc('ytick', labelsize=20) 
 
 #%matplotlib qt5
 # %% parameters
-N = 500  #number of neurons
+N = 300  #number of neurons
 p = .2  #sparsity of connection
 g = 1.5  # g greater than 1 leads to chaotic networks.
 alpha = 1.0  #learning initial constant
@@ -53,10 +49,11 @@ simtime_len = len(simtime)
 ###target pattern
 amp = 0.7;
 freq = 1/60;
-ft = (amp/1.0)*np.sin(1.0*np.pi*freq*simtime) + \
-    (amp/2.0)*np.sin(2.0*np.pi*freq*simtime) + \
-    (amp/6.0)*np.sin(3.0*np.pi*freq*simtime) + \
-    (amp/3.0)*np.sin(4.0*np.pi*freq*simtime)
+rescale = 2
+ft = (amp/1.0)*np.sin(1.0*np.pi*freq*simtime*rescale) + \
+    (amp/2.0)*np.sin(2.0*np.pi*freq*simtime*rescale) + \
+    (amp/6.0)*np.sin(3.0*np.pi*freq*simtime*rescale) + \
+    0*(amp/3.0)*np.sin(4.0*np.pi*freq*simtime*rescale)
 #ft[ft<0] = 0
 ft = ft/1.5
 
@@ -163,6 +160,7 @@ def NL(x,spkM):
     Passing x through logistic nonlinearity with spkM maximum
     """
     nl = spkM/(1+np.exp(-2*x))
+#    nl = x
     #nl = np.tanh(x)
     return nl
 
@@ -180,27 +178,28 @@ def spiking(x,dt):
     x[x<0] = 0
     #x[x>100] = 100
     spike = np.random.poisson(x*dt)
+#    spike = x*dt
     return spike
 
 # %% setup
 #size and length
 N = 300
-T = 200
+T = 500
 dt = 0.1
 simtime = np.arange(0,T,dt)
 learn_every = 2  #effective learning rate
 
 #network parameters
-p = .5  #sparsity of connection
+p = .2  #sparsity of connection
 p_glm = 0.2
 g = 1.5  # g greater than 1 leads to chaotic networks.
 Q = 1.
 E = (2*np.random.rand(N,1)-1)*Q
-alpha = .1  #learning initial constant
+alpha = 1.  #learning initial constant
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 nbasis = 5
-pad = 50
-spkM = 1
+pad = 100
+spkM = 1.
 tau = 1
 thetas = np.random.randn(N,N,nbasis)/1  #tensor of kernel weights
 M_ = np.random.randn(N,N)*g*scale
@@ -283,7 +282,7 @@ for tt in range(pad+1, len(simtime)):
     
     #learning
     if np.mod(tt, learn_every) == 0:
-        dr = deNL(tens)  #taking derivative over the nonlinearity
+        dr = (tens)  #taking derivative over the nonlinearity #deNL
         k = (P @ dr)[:,None]
         rPr = dr[:,None].T @ k
         c = 1.0/(1.0 + rPr)

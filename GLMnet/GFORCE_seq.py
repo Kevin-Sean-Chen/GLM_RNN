@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Apr 21 15:31:47 2020
+Created on Fri Sep 24 17:29:08 2021
 
 @author: kevin
 """
@@ -15,10 +15,6 @@ color_names = ["windows blue", "red", "amber", "faded green"]
 colors = sns.xkcd_palette(color_names)
 sns.set_style("white")
 sns.set_context("talk")
-
-from pyglmnet import GLM, simulate_glm
-from pyglmnet import GLMCV
-from pyglmnet import GLM
 
 import matplotlib 
 matplotlib.rc('xtick', labelsize=20) 
@@ -82,8 +78,8 @@ simtime = np.arange(0,T,dt)
 learn_every = 2  #effective learning rate
 
 #network parameters
-p = .2  #sparsity of connection
-p_glm = .2
+p = .5  #sparsity of connection
+p_glm = .5
 g = 1.5  # g greater than 1 leads to chaotic networks.
 Q = 1.
 E = (2*np.random.rand(N,1)-1)*Q
@@ -91,7 +87,7 @@ alpha = 1.  #learning initial constant
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 nbasis = 5
 pad = 100
-spkM = 1
+spkM = 5
 tau = 1
 thetas = np.random.randn(N,N,nbasis)/1  #tensor of kernel weights
 M_ = np.random.randn(N,N)*g*scale
@@ -127,23 +123,28 @@ wo = np.ones((N,1))
 dw = np.zeros((N,1))
 wf_w = 2.0*(np.random.randn(N,nbasis)-0.5)
 simtime_len = len(simtime)
-amp = 0.7;
-freq = 1/60;
-rescale = 4
-ft = 1*(amp/1.0)*np.sin(1.0*np.pi*freq*simtime*rescale) + \
-    1*(amp/2.0)*np.sin(2.0*np.pi*freq*simtime*rescale) + \
-    1*(amp/6.0)*np.sin(3.0*np.pi*freq*simtime*rescale) + \
-    0*(amp/3.0)*np.sin(4.0*np.pi*freq*simtime*rescale)
-#ft[ft<0] = 0
-ft = ft*100#/1.5
-#ft = Xt[:,0]*10  #test for chaos
-#ft = target*10 #test for IO target
-#stim = stim_*0
-ft = np.concatenate((np.zeros(pad),ft))
+#def get_cov(size=20, length=50):    
+#    x = np.arange(size)
+#    cov = np.exp(-(1 / length) * (x - np.atleast_2d(x).T)**2)
+#    return cov
+#l = 10000
+#Km = get_cov(simtime_len, l)  #sequence target pattern of population
+def get_seq(N,T,width):
+    Km = np.zeros((N,T))
+    xx = np.arange(T)
+    tile = int(T/N)
+    ii = 0
+    for nn in range(N):
+        Km[nn,:] = np.exp(-(xx-ii)**2/width**2)
+        ii+=tile
+    return Km
+l = 300
+Km = get_seq(N,len(simtime),l)
+ft = Km*10  #rescaled target pattern
 
 #initial conditions
 wo_len = np.zeros(simtime_len)
-zt = np.zeros(simtime_len)
+zt = np.zeros_like(ft)
 x0 = 0.5*np.random.randn(N)
 z0 = 0.5*np.random.randn(1)
 xt = np.zeros((N,pad))
@@ -164,7 +165,7 @@ for tt in range(pad+1, len(simtime)):
     rt = tens
     
     #reconstruct dynamics
-    z = wo.T @ tens
+    z = wo* tens[:,None]  #is now a vector
     
     #learning
     if np.mod(tt, learn_every) == 0:
@@ -175,38 +176,42 @@ for tt in range(pad+1, len(simtime)):
         P = P - (k @ k.T) * c  #projection matrix
     	
         # update the error for the linear readout
-        e = z-ft[tt] ### how is error computed!
+        e = z-ft[:,tt][:,None] ### how is error computed!
 	
     	# update the output weights
-        dw = -(e[:,None]*k*c)#[:,None]
+        dw = -(e*k*c)#[:,None]
         wo = wo + dw
         
         # update the internal weight matrix using the output's error
-        M_ = M_ + np.repeat(dw,N,1).T
+        M_ = M_ + dw
+        #np.repeat(dw,N,1).T
      
     #print(tt,z)
     # Store the output of the system.
-    zt[tt] = np.squeeze(z)
+    zt[:,tt] = np.squeeze(z)
     wo_len[tt] = np.nansum(np.sqrt(wo.T @ wo))
     
 # %% plotting
 plt.figure()
-error_avg = sum(abs(zt-ft[:-pad]))/simtime_len
+error_avg = sum(abs(zt-ft[:]))/simtime_len
 print(['Training MAE: ', str(error_avg)]) 
 print('mean firing:', np.mean(spks))  
 print(['Now testing... please wait.'])
 
-plt.subplot(211)
-plt.plot(ft[:-pad])
-plt.plot(zt,'--')
-plt.subplot(212)
+test = zt
+test[zt<0]=0
+plt.subplot(311)
+plt.imshow(ft,aspect='auto')
+plt.subplot(312)
+plt.imshow(test,aspect='auto')
+plt.subplot(313)
 plt.plot(wo_len)
 
 plt.figure()
 plt.imshow(spks,aspect='auto')
 
 # %% testing
-zpt = np.zeros(len(simtime))
+zpt = np.zeros_like(zt)
 M0 = np.random.randn(N,N)*g*scale
 spks = np.zeros((N,pad))
 
@@ -218,16 +223,18 @@ for tt in range(pad+1, len(simtime)):
     rt = tens
   
     #reconstruct dynamics
-    z = wo.T @ tens
-    zpt[tt] = z
+    z = wo* tens[:,None]  #is now a vector
+    zpt[:,tt] = np.squeeze(z)
 
 plt.figure()
-plt.plot(ft)
-plt.plot(zpt*1)
+plt.subplot(211)
+plt.imshow(ft,aspect='auto')
+plt.subplot(212)
+plt.imshow(zpt,aspect='auto')
 
 plt.figure()
 plt.imshow(spks, aspect='auto')
-error_avg = sum(abs(zpt-ft[:-pad]))/simtime_len
+error_avg = sum(abs(zpt-ft[:]))/simtime_len
 print(['Training MAE: ', str(error_avg)]) 
 print('mean firing:', np.mean(spks))
 

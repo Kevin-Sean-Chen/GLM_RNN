@@ -125,7 +125,7 @@ def patterns(N,P,mode):
         pp = np.random.choice(2**N,P,replace=False)
         eps = list([spins[p] for p in pp])
     if mode=='random':
-        eps = [2*(np.random.randint(0,2,N)-0.5) for p in range(P)] 
+        eps = [2*(np.random.randint(0,2,N)-0.5) for p in range(P)]
     return eps
 
 def NeuralDynamics(N,T,pars, connect=None):
@@ -156,9 +156,19 @@ def NeuralDynamics(N,T,pars, connect=None):
 N = 60
 T = 10000
 
-kbT, w_rand, w_strc, P, mode = .1, 1., .1, 3, 'random'
+kbT, w_rand, w_strc, P, mode = 1., 1., .1, 3, 'random'
 pars = kbT, w_rand, w_strc, P, mode
 St, M, J = NeuralDynamics(N,T,pars)
+
+plt.figure()
+plt.imshow(St,aspect='auto')
+plt.xlabel('time steps',fontsize=45)
+plt.ylabel('cells',fontsize=45)
+
+# %%
+eps = patterns(N,2,'random')
+J = np.outer(eps[0],eps[0]) + np.outer(eps[0],eps[1]) + np.outer(eps[1],eps[1]) + np.random.randn(N,N)*10
+St, M, J = NeuralDynamics(N,T,pars, connect=J)
 
 plt.figure()
 plt.imshow(St,aspect='auto')
@@ -302,6 +312,7 @@ def spin_sta(xi, xj, D):
     X = sp.linalg.hankel(np.append(np.zeros(D-2),xj[:T-D+2]),xj[T-D+1:])
     sta = np.linalg.pinv(X.T @ X) @ X.T @ xi
     return sta
+
 # %%
 ii,jj,win = 0,30, 100
 xi, xj = St[ii,:], St[jj,:]

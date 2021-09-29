@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.optimize
 import scipy as sp
+from scipy.optimize import minimize
 
 import seaborn as sns
 color_names = ["windows blue", "red", "amber", "faded green"]
@@ -64,10 +65,10 @@ Q_opt = -np.linalg.pinv(H) @ d #direct optimization
 # %% continuous latent test  (Logistic Gaussian Process)
 ###############################################################################
 # %% generative model
-dt, T = 0.1, 100
+dt, T = 0.1, 50
 time = np.arange(0,T,dt)
 lt = len(time)
-eta_z, tau_z = 1, 10
+eta_z, tau_z = .1, 10
 K = 0.01
 def sigmoid(x):
     return 1/(1+np.exp(-x))
@@ -87,39 +88,44 @@ for tt in range(lt-1):
     y[tt] = observe_y(x[tt],sigmoid(z[tt]))
 
 # %% GP
-def Kernel(x,xx):
-    return ss*np.exp(-(x-xx)**2/ll)
-ss = 1
-ll = 1000
-K_ = np.zeros((lt,lt))
-for ii in range(lt):
-    for jj in range(lt):
-        K_[ii,jj] = Kernel(ii,jj)
+#def Kernel(x,xx):
+#    return ss*np.exp(-(x-xx)**2/ll)
+#ss = 1
+#ll = 1000
+#K_ = np.zeros((lt,lt))
+#for ii in range(lt):
+#    for jj in range(lt):
+#        K_[ii,jj] = Kernel(ii,jj)
         
 # %% faster way of generative model
 #kSE = @(r,l,x)(r*exp(-(bsxfun(@plus,x(:).^2,x(:).^2')-2*x(:)*x(:)')/(2*l.^2)));
 # Define the exponentiated quadratic 
 def GP_exp(xa, xb, ss,ll):
     """Exponentiated quadratic  with σ=1"""
-    sq_norm = -ss * sp.spatial.distance.cdist(xa, xb, 'sqeuclidean')
-    return np.exp(sq_norm/ll)
+#    sq_norm = -ss * sp.spatial.distance.cdist(xa, xb, 'sqeuclidean')
+#    return np.exp(sq_norm/ll)
+    sqdist = np.sum(xa**2, 1).reshape(-1, 1) + np.sum(xb**2, 1) - 2 * np.dot(xa, xb.T)
+    return ss**2 * np.exp(-0.5 / ll**2 * sqdist)
 ss = 1
-ll = 500
-tt = np.expand_dims(np.arange(0,lt),1)
-kSE = GP_exp(tt,tt,ss,ll)
+ll = 10
+t_ = np.expand_dims(np.arange(0,lt),1)
+K_ = GP_exp(t_,t_,ss,ll)
 
-z = kSE @ np.random.randn(lt)
+z = K_ @ np.random.randn(lt)
 y = np.zeros(lt)
 y[sigmoid(z)>np.random.rand(lt)] = 1
 
 # %% inference
 # %% MAP
-niter = 100
+niter = 50
 f = K_ @ np.random.randn(lt)
+#ss,ll = k_map
+#K_ = GP_exp(t_,t_,ss,ll)
 Im = np.diag(np.ones(lt))
 for nn in range(niter):
-    u = np.exp(f)/np.sum(np.exp(f))
-    WW = (np.diag(u) - np.outer(u,u))
+    u = sigmoid(f)
+    #np.exp(f)/np.sum(np.exp(f))
+    WW = 1*(np.diag(u)  np.outer(u,u))
     u_,s_,v_ = np.linalg.svd(WW)
     RR = u_ @ np.diag(s_**0.5)  #Cholesky decomposition via svd
 #    RR = (lt**0.5)*(np.diag(u**0.5) - np.outer(u,u)@np.diag(u)**(-0.5))
@@ -130,19 +136,52 @@ for nn in range(niter):
     uu,ss,vv = np.linalg.svd(IRKR)
     inv_TRKR = vv.T @ np.diag(ss**-1) @ uu.T  #inverse with svd
     f = K_ @ (Im - RR @ inv_TRKR @RR.T@K_) @ v  #Newton method
+    print(nn)
+    
+# %% Algorithm3
+niter = 100
+f = K_ @ np.random.randn(lt)
+#ss_marg,ll_marg = k_map
+K_ = GP_exp(t_,t_,ss_marg,ll_marg)
+Im = np.diag(np.ones(lt))
+for nn in range(niter):
+    u = sigmoid(f)
+    WW = 1*(np.diag(u) - np.outer(u,u))
+    u_,s_,v_ = np.linalg.svd(WW)
+    RR = u_ @ np.diag(s_**0.5)  #Cholesky decomposition via svd
+    IWKW = Im + RR.T @ K_ @ RR
+    LL = np.linalg.cholesky(IWKW)
+    dlogP = y-sigmoid(f) #1/(np.exp(f)+1)   #derivitive
+    v = WW @ f + dlogP
+    WKb = RR.T @ K_ @ v
+    a = v - RR.T @ np.linalg.solve(LL.T, np.linalg.solve(LL, WKb))  #matrix inversion method
+    f = K_ @ a
+    print(nn)
 
 # %%
 plt.figure()
 plt.plot(z,label='true latent')
-plt.plot(f,'--',label='inferred GP')
+plt.plot(f-np.mean(f)*0,'--',label='inferred GP')
 plt.legend()
 
 # %% Laplace
-def approx(ss,ll):
-    K_ = GP_exp(tt,tt,ss,ll)
-    uu,ss,vv = np.linalg.svd(K_)
-    Kinv = vv.T @ np.diag(ss**-1) @ uu.T
+ct_ = 0.0001
+def approx(pars,f):
+    ss,ll = pars
+    K_ = GP_exp(t_,t_,ss,ll)
+    uu,s_,vv = np.linalg.svd(K_)   #make low-rank approx here~~~
+    cut = np.sum(s_>ct_)
+    Kinv = vv[:,:cut] @ np.diag(s_[:cut]**-1) @ uu[:,:cut].T  #low-rank with SVD inversion
+    ### Kinv = vv.T @ np.diag(s_**-1) @ uu.T
+#    K_ = uu[:,:cut] @ np.diag(s_[:cut]) @ uu[:,:cut].T  #low-rank approximation
+#    LL = np.linalg.cholesky(K_)  #via Cholesky method
+#    alpha = np.linalg.solve(LL.T, np.linalg.solve(LL,f))
+#    ql = -0.5*np.dot(alpha,f) -np.sum(np.diag(LL)) + (np.dot(y,f)+lt*np.log(np.sum(np.exp(f)))) - logdet
     (sign, logdet) = np.linalg.slogdet(Im + RR.T@K_@RR)
-    ql = -0.5*f.T @ Kinv @ f + (np.dot(y,f)+lt*np.log(np.sum(np.exp(f)))) - logdet
-    return ql
+    ql = -0.5*f.T @ Kinv @ f + np.sum(-np.log(1+np.exp(-np.dot(y,f)))) - 0.5*logdet
+    ### (np.dot(y,f)+lt*np.log(np.sum(np.exp(f))))
+    return -ql
 
+res = sp.optimize.minimize(lambda sl: approx(sl,f), np.array([2,9]), bounds = ((1e-3,None),(1e-3,None)),\
+                           method='L-BFGS-B', options={'disp': True})
+k_map = res.x
