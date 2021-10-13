@@ -165,7 +165,7 @@ plt.imshow(St,aspect='auto')
 plt.xlabel('time steps',fontsize=45)
 plt.ylabel('cells',fontsize=45)
 
-# %%
+# %% change of LRT with clustered network structure
 eps = patterns(N,2,'random')
 J = np.outer(eps[0],eps[0]) + np.outer(eps[0],eps[1]) + np.outer(eps[1],eps[1]) + np.random.randn(N,N)*10
 St, M, J = NeuralDynamics(N,T,pars, connect=J)

@@ -97,7 +97,7 @@ for t in range(len(simtime)-1):
         #np.repeat(dw,N,1).T#.reshape(N,N).T
         #np.outer(wf,wo)
         #np.repeat(dw.T, N, 1);
-        M = M*mask           
+#        M = M*mask           
 
     # Store the output of the system.
     zt[0,ti] = np.squeeze(z)
@@ -198,20 +198,20 @@ E = (2*np.random.rand(N,1)-1)*Q
 alpha = 1.  #learning initial constant
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 nbasis = 5
-pad = 100
+pad = 50
 spkM = 1.
 tau = 1
 thetas = np.random.randn(N,N,nbasis)/1  #tensor of kernel weights
 M_ = np.random.randn(N,N)*g*scale
 sparse = np.random.rand(N,N)
-mask = np.random.rand(N,N)
-mask[sparse>p] = 0
-mask[sparse<=p] = 1
+mask_J = np.random.rand(N,N)
+mask_J[sparse>p] = 0
+mask_J[sparse<=p] = 1
 
 for ii in range(N) :
     jj = np.where(np.abs(M_[ii,:])>0)
     M_[ii,jj] = M_[ii,jj] - np.sum(M_[ii,jj])/len(jj)
-M_ = M_ * mask
+M_ = M_ * mask_J
 
 Ks = (np.fliplr(basis_function1(pad,nbasis).T).T).T
 allK = np.zeros((N,N,pad))  #number of kernels x length of time window
@@ -298,6 +298,7 @@ for tt in range(pad+1, len(simtime)):
         # update the internal weight matrix using the output's error
         M_ = M_ + np.repeat(dw,N,1).T  #(E @ dw.T)
         #np.repeat(dw,N,1).T#0.0001*np.outer(wf,wo)
+#        M_ = M_*mask_J
      
     #print(tt,z)
     # Store the output of the system.

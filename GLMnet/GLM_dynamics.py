@@ -68,6 +68,7 @@ def spiking(x,dt):
     x[x<0] = 0  #ReLU
     #x[x>100] = 100  #hard threshold in case of instability
     spike = np.random.poisson(x*dt)
+#    spike = x
     return spike
 
 def flipkernel(k):
@@ -121,7 +122,10 @@ def GLM_net(M_, allK, T):
     for tt in range(h,T):
         ut = np.einsum('ijk,jk->i',  kernels, spks[:,tt-h:tt])  #neat way for linear dynamics
         us[:,tt] = NL(ut, spkM) #np.random.poisson(ut)
-        spks[:,tt] = spiking(NL(ut, spkM), dt)  #Bernouli process for spiking
+        temp = spiking(NL(ut, spkM), dt)
+        temp[temp>0]=1
+        spks[:,tt] = temp
+#        spks[:,tt] = spiking(NL(ut, spkM), dt)  #Bernouli process for spiking
     return us, spks
 
 def G_FORCE_network(M_, spkM, allK, T):
@@ -135,7 +139,10 @@ def G_FORCE_network(M_, spkM, allK, T):
     for tt in range(h,T):
         r = np.einsum('ijk,jk->i',  allK, spks[:,tt-h:tt])  #neat way for linear dynamics
         us[:,tt] = NL(r, spkM) #np.random.poisson(ut)
-        spks[:,tt] = spiking(M_ @ NL(r, spkM), dt)  #Bernouli process for spiking
+        temp = spiking(M_ @ NL(r, spkM), dt)
+        temp[temp>0]=1
+        spks[:,tt] = temp
+#        spks[:,tt] = spiking(M_ @ NL(r, spkM), dt)  #Bernouli process for spiking
     return us, spks
 
 # %% ground truth GLM-net
@@ -211,13 +218,13 @@ for ii in range(N):
             
 # %% parameter test
 M_ = 1/np.sqrt(p_glm*N)*np.random.randn(N,N)
-#us,spks = GLM_net(M_, allK, T)
-us,spks = G_FORCE_network(M_, spkM, allK, T)
+us,spks = GLM_net(M_, allK, T)
+#us,spks = G_FORCE_network(M_, spkM, allK, T)
 plt.figure()
 plt.imshow(spks,aspect='auto')
 
 # %% Dynamics
-gs = np.array([0,0.001,0.01,0.1,1,10,100,1000])/1  #for recurrent strenght
+#gs = np.array([0,0.001,0.01,0.1,1,10,100,1000])/1  #for recurrent strenght
 gs = np.array([1,5,10,15,25,50,100])   #for max spike rate
 win = 200
 acs = np.zeros((len(gs),N,win))
@@ -230,6 +237,7 @@ for gg in range(len(gs)):
         acs[gg,nn,:] = autocorr(spks[nn,:], np.arange(win))
 
 # %%
+plt.figure()
 nn = len(gs)
 color = iter(cm.rainbow(np.linspace(0, 1, nn)))
 acss = np.zeros((len(gs),win))
