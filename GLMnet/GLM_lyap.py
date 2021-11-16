@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Sep 18 21:56:22 2021
+Created on Sun Oct 24 21:52:50 2021
 
 @author: kevin
 """
@@ -145,51 +145,7 @@ def G_FORCE_network(M_, spkM, allK, T):
 #        spks[:,tt] = spiking(M_ @ NL(r, spkM), dt)  #Bernouli process for spiking
     return us, spks
 
-# %% ground truth GLM-net
-N = 10
-T = 1000
-dt = 0.1
-time = np.arange(0,T,dt)
-stim = np.random.randn(len(time))*0.1
-stimulus = 0*np.repeat(stim[:,None],10,axis=1).T #identical stimulus for all three neurons for now
-nbasis = 5
-spkM = 1
-pad = 150
-nkernels = N**2+N  #xN coupling and N stimulus filters
-thetas = np.random.randn(nkernels, nbasis)  #weights on kernels
-#Ks = basis_function1(pad, nbasis)
-Ks = (np.fliplr(basis_function1(pad,nbasis).T).T).T
-allK = np.zeros((nkernels,pad))  #number of kernels x length of time window
-for ii in range(nkernels):
-    allK[ii,:] = np.dot(thetas[ii,:], Ks)
-allK = allK.reshape(N,N+1,pad)
-us, spks = GLM_net_stim(allK, 0, stimulus)
-
-plt.figure()
-plt.imshow(us,aspect='auto')
-
-# %% Measurements
-def autocorr_(x):
-    result = np.correlate(x, x, mode='same')
-    return result[int(result.size/2):]
-def autocorr(x,lags):
-    '''manualy compute, non partial'''
-    mean=np.mean(x)
-    var=np.var(x)
-    xp=x-mean
-    corr=[1. if l==0 else np.sum(xp[l:]*xp[:-l])/len(x)/var for l in lags]
-#    corr=[np.sum(xp[l:]*xp[:-l])/len(x)/var for l in lags]
-    return np.array(corr)
-def exp_fit(x,y):
-    #A, tau = np.polyfit(x, np.log(y), 1)
-    #np.polyfit(x, np.log(y), 1, w=np.sqrt(y))
-    p0 = (1.,1.e-5,0.) # starting search koefs
-    opt, pcov = curve_fit(model_func, x, y, p0)
-    a, k, b = opt
-    return k
-def model_func(x, a, k, b):
-    return a * np.exp(-k*x) + b
-
+# %%
 # %% GLM kernel setup
 N = 100
 nbasis = 5
@@ -197,7 +153,7 @@ pad = 100
 spkM = 1
 T = 2000
 dt = 1
-p_glm = 0.2
+p_glm = 0.5
 Ks = (np.fliplr(basis_function1(pad,nbasis).T).T).T
 allK = np.zeros((N,N,pad))  #number of kernels x length of time window
 thetas = np.random.randn(N,N, nbasis)
@@ -210,48 +166,122 @@ for ii in range(N):
         temp = np.dot(thetas[ii,jj,:], Ks)
         if ii==jj:
             temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )
-            allK[ii,jj,:] = temp*10.
+            allK[ii,jj,:] = temp*1.
 #            allK[ii,jj,:] = temp*mask[ii,jj]
         else:
 #            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )
             allK[ii,jj,:] = temp*mask[ii,jj]
             
-# %% parameter test
-M_ = 1/np.sqrt(p_glm*N)*np.random.randn(N,N)
-us,spks = GLM_net(M_, allK, T)
-#us,spks = G_FORCE_network(M_, spkM, allK, T)
-plt.figure()
-plt.imshow(spks,aspect='auto')
+# %% Lyapunov exp
+def GLM_net_pert(M_, allK, T, pert):
+    N, K, h = allK.shape  #N neurons x K kernels x pad window
+    us = np.zeros((N,T))  #all activity through time
+    spks = np.zeros((N,T))  #for spiking process
+    us[:,h+1] = pert/N
+    
+    for tt in range(h,T):
+        ### G-FORCE network
+        r = np.einsum('ijk,jk->i',  allK, spks[:,tt-h:tt])  #neat way for linear dynamics
+        us[:,tt] = NL(r, spkM)
+        temp = spiking(M_ @ NL(r, spkM), dt)
+#        temp[temp>0]=1
+        spks[:,tt] = temp
+        ### GLM network
+#        ut = np.einsum('ijk,jk->i',  allK, spks[:,tt-h:tt])  #neat way for linear dynamics
+#        us[:,tt] = NL(ut, spkM) #np.random.poisson(ut)
+#        temp = spiking(NL(ut, spkM), dt)
+#        temp[temp>0]=1
+#        spks[:,tt] = temp
+    return us, spks
+   
+spkM = 1
+eps = 1e-5
+Tt = 500
+rg = 0.1
+M_ = rg/np.sqrt(p_glm*N)*np.random.randn(N,N)
 
-# %% Dynamics
-gs = np.array([0,0.001,0.01,0.1,1,10,100])/1  #for recurrent strenght
-#gs = np.array([1,5,10,15,25,50,100])   #for max spike rate
-win = 200
-acs = np.zeros((len(gs),N,win))
-Mtemp = np.random.randn(N,N)
-for gg in range(len(gs)):
-    M_ = gs[gg]*Mtemp*1/np.sqrt(p_glm*N)  #1 or gs[gg]
-    us,spks =G_FORCE_network(M_, 1, allK, T)  #spkM or gs[gg]
-    #GLM_net(M_, allK, T)
-    for nn in range(N):
-        acs[gg,nn,:] = autocorr(spks[nn,:], np.arange(win))
+us, spks = GLM_net_pert(M_, allK, Tt, 0)
+us_, spks_ = GLM_net_pert(M_, allK, Tt, eps)
+
+Lya = 1/Tt * np.log( (np.linalg.norm(us[:,-1] - us_[:,-1])+1e-10) / eps ) #-np.log(1e-10/eps)/Tt
+print(Lya)
 
 # %%
+log_r = np.array([-5,-4,-3,-2,-1,0,1,2,3])
+lyas = np.zeros(len(log_r))
+for ll in range(len(log_r)):
+    MM = np.float_power(10, log_r[ll]) * M_
+    us, spks = GLM_net_pert(MM, allK, Tt, 0)
+    us_, spks_ = GLM_net_pert(MM, allK, Tt, eps)
+    Lya = 1/Tt * np.log( (np.linalg.norm(us[:,-1] - us_[:,-1])+1e-10) / eps )
+    lyas[ll] = Lya
+# %%
 plt.figure()
-nn = len(gs)
-color = iter(cm.rainbow(np.linspace(0, 1, nn)))
-acss = np.zeros((len(gs),win))
-for ii in range(len(gs)):
-#    if ii==0:
-#        acss[ii,:] = np.nanmean(acs[ii,:,:],axis=0)
-#        plt.plot(acss[ii,:], 'k')
-#    else:
-#        acss[ii,:] = np.nanmean(acs[ii,:,:],axis=0)
-#        c = next(color)
-#        plt.plot(acss[ii,:], c=c)
-    acss[ii,:] = np.nanmean(acs[ii,:,:],axis=0)
-    c = next(color)
-    plt.plot(acss[ii,:], label=str(gs[ii]),c=c,linewidth=7)
-plt.legend(fontsize=40)    
-plt.xlabel(r'$\tau$',fontsize=50)
-plt.ylabel(r'$<n(t)n(t-\tau)>$',fontsize=50)
+plt.semilogx(np.float_power(10,log_r), lyas,'-o')
+plt.xlabel('recurrent strength g', fontsize=40)
+plt.ylabel('Lyapunov exponent', fontsize=40)
+
+###############################################################################
+# %%
+###############################################################################
+# %% Lyapunov from time series
+nn = 5
+rg = 10
+M_ = rg/np.sqrt(p_glm*N)*np.random.randn(N,N)
+M_[np.random.rand(N,N)>p_glm] = 0
+us,spks = G_FORCE_network(M_, spkM, allK, T)
+negative_control = np.sin(np.arange(0,T)/30) + np.random.randn(T)  #stochastic not chaotic
+
+data = us[nn,:].copy()
+#data = negative_control.copy()
+eps = 1e-3
+lyapunovs = [[] for i in range(T)]
+
+maxit = 1000
+n = 0 #number of nearby pairs found
+for i in range(T):
+    for j in range(i+1,T):
+        if np.abs(data[i] - data[j]) < eps:
+            n+=1
+            print(n)
+            for k in range(min(T-i,T-j)):
+                lyapunovs[k].append(np.log(np.abs(data[i+k] - data[j+k])))
+    if n > maxit:
+        break
+
+plt.figure()
+plt.plot(data)
+# %%
+#f=open('lyapunov.txt','w')
+#for i in range(len(lyapunovs)):
+#    if len(lyapunovs[i]):
+#        print>>f, i, sum(lyapunovs[i])/len(lyapunovs[i])
+#f.close()
+      
+lya = np.zeros(len(lyapunovs))          
+for i in range(len(lyapunovs)):
+    if len(lyapunovs[i]):
+        temp = lyapunovs[i]
+        pos = np.isinf(temp)  #the infinity ones
+        mask = np.array(~pos)  #mask them out
+        lya[i] = np.nansum(lyapunovs[i]*mask)/(len(lyapunovs[i])-sum(pos))
+        
+# %%
+plt.figure()
+plt.plot(lya,'-o')
+plt.plot([0,len(lya)],[0,0],'--')
+
+# %%
+ggs = np.array([0.001, 0.01, 0.1, 1, 10])
+Lyas = np.array([-0.13, 0.03, 0.16, 0.2, .3])
+spk_rates = np.array([ 0.0002, 0.002, 0.05, 0.26, 2.2])
+plt.figure()
+fig, ax1 = plt.subplots()
+
+ax2 = ax1.twinx()
+ax1.semilogx(ggs, Lyas, '-o',linewidth=8, markersize=13)
+ax2.semilogx(ggs, spk_rates, '-o', color='g',linewidth=8, markersize=13)
+
+ax1.set_xlabel(r'$g$',fontsize=50)
+ax1.set_ylabel(r'$\lambda_{max}$',fontsize=50,color='b')
+ax2.set_ylabel('mean spike rate',fontsize=50,color='g')

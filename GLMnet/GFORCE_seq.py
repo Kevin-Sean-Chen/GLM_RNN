@@ -72,14 +72,14 @@ def spiking(x,dt):
 # %% setup
 #size and length
 N = 300
-T = 200
+T = 100
 dt = 0.1
 simtime = np.arange(0,T,dt)
 learn_every = 2  #effective learning rate
 
 #network parameters
-p = .5  #sparsity of connection
-p_glm = .5
+p = .2  #sparsity of connection
+p_glm = .2
 g = 1.5  # g greater than 1 leads to chaotic networks.
 Q = 1.
 E = (2*np.random.rand(N,1)-1)*Q
@@ -87,7 +87,7 @@ alpha = 1.  #learning initial constant
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 nbasis = 5
 pad = 100
-spkM = 5
+spkM = 1
 tau = 1
 thetas = np.random.randn(N,N,nbasis)/1  #tensor of kernel weights
 M_ = np.random.randn(N,N)*g*scale
@@ -111,8 +111,8 @@ for ii in range(N):
     for jj in range(N):
         temp = np.dot(thetas[ii,jj,:], Ks)
         if ii==jj:
-            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )
-            allK[ii,jj,:] = temp*10.
+#            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )
+            allK[ii,jj,:] = temp*1.
         else:
             #temp = temp - np.mean(temp)
             #temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )*np.random.choice([1,-1],1)[0]
@@ -140,7 +140,7 @@ def get_seq(N,T,width):
     return Km
 l = 300
 Km = get_seq(N,len(simtime),l)
-ft = Km*10  #rescaled target pattern
+ft = Km*100  #rescaled target pattern
 
 #initial conditions
 wo_len = np.zeros(simtime_len)

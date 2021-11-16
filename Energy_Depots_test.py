@@ -143,15 +143,15 @@ dt = 0.01
 lt, time = len(np.arange(0,T,dt)), np.arange(0,T,dt)
 xs,vs, dus = np.zeros(lt), np.zeros(lt), np.zeros(lt)
 g1, g2 = .5,.5/3
-noise_x, noise_v = 5,10
+noise_x, noise_v = 5,5
 V0,V1,V2,x0 = 0.,.5,.1,100
-aa,bb = -1.,1.
+aa,bb = -1,1.5
 ws = np.zeros(lt)
 for tt in range(lt-1):
     dUdx = derivative(U_,xs[tt])   ####check thissssss~~~~~~~
-    #dUdx = -dt*(U_(xs[tt+1]) - U_(xs[tt]))
+#    dUdx = -dt*(U_(xs[tt+1]) - U_(xs[tt]))
     xs[tt+1] = xs[tt] + dt*vs[tt] + np.sqrt(dt*noise_x)*np.random.randn() + dUdx*0.0
-    vs[tt+1] = vs[tt] + dt*( F_(vs[tt]) + dUdx*0 - ws[tt] ) + np.sqrt(dt*noise_v)*np.random.randn()
+    vs[tt+1] = vs[tt] + dt*( F_(vs[tt]) + dUdx*.1 - ws[tt] ) + np.sqrt(dt*noise_v)*np.random.randn()
     #ws[tt+1] = ws[tt] + dt*(0.08*(vs[tt]+0.7-0.8*ws[tt]))
     dus[tt] = dUdx
     

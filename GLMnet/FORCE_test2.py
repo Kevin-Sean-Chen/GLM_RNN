@@ -17,8 +17,8 @@ sns.set_style("white")
 sns.set_context("talk")
 
 import matplotlib 
-matplotlib.rc('xtick', labelsize=20) 
-matplotlib.rc('ytick', labelsize=20) 
+matplotlib.rc('xtick', labelsize=40) 
+matplotlib.rc('ytick', labelsize=40) 
 
 #%matplotlib qt5
 # %% parameters
@@ -32,11 +32,16 @@ learn_every = 2  #effective learning rate
 
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 M = np.random.randn(N,N)*g*scale
+cutoff = 100
+uu,ss,vv = np.linalg.svd(M)
+ss[cutoff:] = 0
+M = uu @ np.diag(ss) @ vv
 sparse = np.random.rand(N,N)
 #M[sparse>p] = 0
 mask = np.random.rand(N,N)
 mask[sparse>p] = 0
 mask[sparse<=p] = 1
+M = M*mask
 
 nRec2Out = N
 wo = np.zeros((nRec2Out,1))
@@ -116,9 +121,9 @@ plt.imshow(rt,aspect='auto')
 # %% testing
 zpt = np.zeros((1,simtime_len))
 ti = 0
-#x = x0
-#r = np.tanh(x)
-#z = z0
+x = x0
+r = np.tanh(x)
+z = z0
 for t in range(len(simtime)-1):
     ti = ti+1 
     
@@ -184,7 +189,7 @@ def spiking(x,dt):
 # %% setup
 #size and length
 N = 300
-T = 500
+T = 200
 dt = 0.1
 simtime = np.arange(0,T,dt)
 learn_every = 2  #effective learning rate
@@ -198,11 +203,15 @@ E = (2*np.random.rand(N,1)-1)*Q
 alpha = 1.  #learning initial constant
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 nbasis = 5
-pad = 50
+pad = 100
 spkM = 1.
 tau = 1
 thetas = np.random.randn(N,N,nbasis)/1  #tensor of kernel weights
 M_ = np.random.randn(N,N)*g*scale
+cutoff = 299
+uu,ss,vv = np.linalg.svd(M_)
+ss[cutoff:] = 0
+M_ = uu @ np.diag(ss) @ vv
 sparse = np.random.rand(N,N)
 mask_J = np.random.rand(N,N)
 mask_J[sparse>p] = 0
@@ -223,12 +232,12 @@ for ii in range(N):
     for jj in range(N):
         temp = np.dot(thetas[ii,jj,:], Ks)
         if ii==jj:
-            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )
-            allK[ii,jj,:] = temp*10.
+#            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )*np.random.choice([1,-1],1)[0]
+            allK[ii,jj,:] = temp*1.
         else:
             #temp = temp - np.mean(temp)
             #temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )*np.random.choice([1,-1],1)[0]
-            allK[ii,jj,:] = temp*mask[ii,jj]
+            allK[ii,jj,:] = 0#temp*mask[ii,jj]
 
 #input parameters
 wo = np.ones((N,1))
@@ -237,7 +246,7 @@ wf_w = 2.0*(np.random.randn(N,nbasis)-0.5)
 simtime_len = len(simtime)
 amp = 0.7;
 freq = 1/60;
-rescale = 2
+rescale = 4
 ft = 1*(amp/1.0)*np.sin(1.0*np.pi*freq*simtime*rescale) + \
     1*(amp/2.0)*np.sin(2.0*np.pi*freq*simtime*rescale) + \
     1*(amp/6.0)*np.sin(3.0*np.pi*freq*simtime*rescale) + \
@@ -267,7 +276,9 @@ for tt in range(pad+1, len(simtime)):
     tens = NL( np.einsum('ijk,jk->i',  allK, spks[:,tt-pad-1:tt-1]), spkM)
     #xt[:,tt] = M_ @ tens #(1.0-dt)*xt[:,tt-1] + dt*( M_ @ tens )  #dt*( M_ @ tens ) #
     #spks[:,tt] = spiking( (xt[:,tt]) , dt)
-    spks[:,tt] = spiking( (M_ @ tens) , dt)  #generate spike s with current u
+    spks_ = spiking( (M_ @ tens) , dt)  #generate spike s with current u
+#    spks_[spks_>0] = 1
+    spks[:,tt] = spks_
     rt[:,tt] = tens
     #rt[:,tt] = rt[:,tt-1] - dt*rt[:,tt-1]/tau + dt*spks[:,tt]/tau
     
@@ -337,7 +348,9 @@ for tt in range(pad+1, len(simtime)):
     tens = NL( np.einsum('ijk,jk->i',  allK, spks[:,tt-pad-1:tt-1]), spkM)
     #xt[:,tt] = (1.0-dt)*xt[:,tt-1] + dt*( M_ @ tens )  #dt*( M_ @ tens ) #
     #spks[:,tt] = spiking( (xt[:,tt]) , dt)
-    spks[:,tt] = spiking( (M_ @ tens) , dt)
+    spks_ = spiking( (M_ @ tens) , dt)
+#    spks_[spks_>0] = 1
+    spks[:,tt] = spks_
     rt[:,tt] = tens
     #rt[:,tt] = rt[:,tt-1] - dt*rt[:,tt-1]/tau + dt*spks[:,tt]/tau
     #NL( (xt[:,tt]), spkM)   ### GLM form
@@ -351,7 +364,7 @@ for tt in range(pad+1, len(simtime)):
     zpt[tt] = z
 
 plt.figure()
-plt.plot(ft)
+plt.plot(ft[:])  #pad
 plt.plot(zpt*1)
 
 plt.figure()
@@ -382,4 +395,20 @@ plt.fill_between(np.arange(len(kmea)),kmea-kstd, kmea+kstd, alpha=0.5)
 plt.figure()
 plt.plot(ks.T)
 
+# %% plots for condition
+plt.figure()
+plt.plot()
+plt.plot(ft[pad:-pad],'k', label='target',linewidth=20)
+plt.plot(g_force[pad:],'orange',alpha = 0.8,label='g=1.5',linewidth=10)
+plt.plot(g_force015[pad:]-200,'b',alpha = 0.8,label='g=0.15',linewidth=10)
+plt.plot(g_force15[pad:]-400,'r',alpha = 0.8,label='g=15',linewidth=10)
+plt.plot(g_force_hom[pad:]-600,'-o',alpha = 0.8,label='identical h',linewidth=10)
+plt.plot(g_force_lin[pad:]-800,'-*',alpha = 0.8,label='linear f',linewidth=10)
+plt.legend(fontsize=50,loc='center left', bbox_to_anchor=(1, 0.5))
+plt.yticks([])
 
+# %%
+
+#import pickle
+#with open('GFORCE_condition.pickle', 'wb') as f:
+#    pickle.dump([g_force, g_force015,g_force15,g_force_hom,g_force_lin], f)
