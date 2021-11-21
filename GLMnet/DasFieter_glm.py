@@ -72,7 +72,7 @@ T = 300
 dt = .1
 time = np.arange(0,T,dt)
 lt = len(time)
-r = .9   #recurrent strength
+r = 1.5   #recurrent strength
 tau = 1   #time scale of spike filter
 lamb0 = 1  #maximum Poisson firing (corresponding to 1 spik per 1ms given dt=0.1), or gain for exp()
 gain = 0.5
@@ -163,9 +163,9 @@ for rr in range(reps):
     for vv in range(5):
         if vv<3:
             B = bt_*uu[:,vv][:,None]  #projection onto three basis
-        elif vv==3:
-            B = bt_.copy()/np.linalg.norm(np.ones(N))*A  #without projection
         elif vv==4:
+            B = bt_.copy()/np.linalg.norm(np.ones(N))*A  #without projection
+        elif vv==3:
             B = np.ones((N,lt))*0#np.random.randn(N,lt)*0#np.zeros_like(bt_)+1 #no input
         spk,st,_ = generative_GLM(Wij, B, dt)
         w_init = np.zeros([dd,])  #Wij.reshape(-1)#
@@ -179,23 +179,25 @@ for rr in range(reps):
 # %%
 y = dels
 plt.figure()
-x = np.array([0,1,2,4,3])
+x = np.array([0,1,2,3,4])
 plt.plot(x,y,'-o')
-my_xticks = ['m','n','orthogonal','w/o','unit']
-plt.xticks(my_xticks)
+my_xticks = ['m','n','orthogonal','unit','w/o']
+plt.xticks(x,my_xticks)
 plt.ylabel('MSE',fontsize=50)
 #plt.ylabel(r'$corr(W_{true},W_{inferr})$',fontsize=50)
 plt.xlabel('input projection',fontsize=50)
 plt.legend()
 
 # %%
+plt.figure()
 plt.bar(x, np.mean(y,1))
 cc = np.std(y,1)
 plt.errorbar(x, np.mean(y,1), yerr=cc, fmt="o", color="grey", linewidth=8)
 my_xticks = ['m','n','orthogonal','unit','w/o']
 plt.xticks(x, my_xticks)
-plt.ylabel('MSE',fontsize=50)
-plt.xlabel('input projection',fontsize=50)
+plt.ylabel(r'MSE($J_{inf},J_{true}$)',fontsize=60)
+#plt.xlabel('input projection',fontsize=50)
+plt.ylim([0.6,.8])
 
 # %%
 ###############################################################################

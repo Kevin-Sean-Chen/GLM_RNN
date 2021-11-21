@@ -55,7 +55,7 @@ def NL(x,spkM):
     """
     Passing x through logistic nonlinearity with spkM maximum
     """
-    nl = spkM/(1+np.exp(x))
+    nl = spkM/(1+np.exp(-x))
     #nl = np.tanh(x)
     return nl
 
@@ -139,7 +139,8 @@ def G_FORCE_network(M_, spkM, allK, T):
     for tt in range(h,T):
         r = np.einsum('ijk,jk->i',  allK, spks[:,tt-h:tt])  #neat way for linear dynamics
         us[:,tt] = NL(r, spkM) #np.random.poisson(ut)
-        temp = spiking(M_ @ NL(r, spkM), dt)
+        self_v = np.sum(h_hist[None,:]*spks[:,tt-h:tt],1)
+        temp = spiking(M_ @ us[:,tt] + self_v, dt)
 #        temp[temp>0]=1
         spks[:,tt] = temp
 #        spks[:,tt] = spiking(M_ @ NL(r, spkM), dt)  #Bernouli process for spiking
@@ -152,7 +153,7 @@ nbasis = 5
 pad = 100
 spkM = 1
 T = 2000
-dt = 1
+dt = .1
 p_glm = 0.5
 Ks = (np.fliplr(basis_function1(pad,nbasis).T).T).T
 allK = np.zeros((N,N,pad))  #number of kernels x length of time window
@@ -171,7 +172,8 @@ for ii in range(N):
         else:
 #            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )
             allK[ii,jj,:] = temp*mask[ii,jj]
-            
+h_hist = temp = np.dot( np.array([-1,-0.5,-0.2,-0.1,0.1]) , Ks )
+         
 # %% Lyapunov exp
 def GLM_net_pert(M_, allK, T, pert):
     N, K, h = allK.shape  #N neurons x K kernels x pad window
@@ -225,14 +227,21 @@ plt.ylabel('Lyapunov exponent', fontsize=40)
 # %%
 ###############################################################################
 # %% Lyapunov from time series
-nn = 5
-rg = 10
+nn = 10
+rg = 1
 M_ = rg/np.sqrt(p_glm*N)*np.random.randn(N,N)
+#for ii in range(N) :
+#    jj = np.where(np.abs(M_[ii,:])>0)
+#    M_[ii,jj] = M_[ii,jj] - np.sum(M_[ii,jj])/len(jj)
 M_[np.random.rand(N,N)>p_glm] = 0
 us,spks = G_FORCE_network(M_, spkM, allK, T)
 negative_control = np.sin(np.arange(0,T)/30) + np.random.randn(T)  #stochastic not chaotic
 
 data = us[nn,:].copy()
+plt.figure()
+plt.plot(data)
+print('population spikes:', np.max(spks)/dt)
+# %% sampling error for Lyapunov
 #data = negative_control.copy()
 eps = 1e-3
 lyapunovs = [[] for i in range(T)]
@@ -249,9 +258,7 @@ for i in range(T):
     if n > maxit:
         break
 
-plt.figure()
-plt.plot(data)
-# %%
+# %% computing log of error for Lypapunov
 #f=open('lyapunov.txt','w')
 #for i in range(len(lyapunovs)):
 #    if len(lyapunovs[i]):
@@ -273,15 +280,17 @@ plt.plot([0,len(lya)],[0,0],'--')
 
 # %%
 ggs = np.array([0.001, 0.01, 0.1, 1, 10])
-Lyas = np.array([-0.13, 0.03, 0.16, 0.2, .3])
+#Lyas = np.array([-0.13, 0.03, 0.16, 0.2, .3])
+Lyas = np.array([-0.693147,-0.69314718,0.16, 0.2, .3])
 spk_rates = np.array([ 0.0002, 0.002, 0.05, 0.26, 2.2])
+spk_rates = np.array([10,10,20,30,60])
 plt.figure()
 fig, ax1 = plt.subplots()
 
 ax2 = ax1.twinx()
-ax1.semilogx(ggs, Lyas, '-o',linewidth=8, markersize=13)
-ax2.semilogx(ggs, spk_rates, '-o', color='g',linewidth=8, markersize=13)
+ax1.semilogx(ggs, Lyas, '-o',linewidth=10, markersize=15)
+ax2.semilogx(ggs, spk_rates, '-o', color='g',linewidth=10, markersize=15)
 
 ax1.set_xlabel(r'$g$',fontsize=50)
 ax1.set_ylabel(r'$\lambda_{max}$',fontsize=50,color='b')
-ax2.set_ylabel('mean spike rate',fontsize=50,color='g')
+ax2.set_ylabel('max spikes/s',fontsize=50,color='g')

@@ -48,7 +48,7 @@ def NL(x,spkM):
     """
     Passing x through logistic nonlinearity with spkM maximum
     """
-    nl = spkM/(1+np.exp(-2*x))
+    nl = spkM/(1+np.exp(-x))
     #nl = np.tanh(x)
     return nl
 
@@ -61,9 +61,8 @@ def spiking(x,dt):
     """
     Produce Poisson spiking given spike rate
     """
-#    N = len(x)
-#    spike = np.random.rand(N) < x*dt*0.1
-    x[x<0] = 0
+#    x[x<0] = 0
+    x = 1/gain*np.log(1+np.exp(gain*x))
     #x[x>100] = 100
     spike = np.random.poisson(x*dt)  #Poisson process
 #    spike = x*dt #rate model
@@ -71,7 +70,7 @@ def spiking(x,dt):
 
 # %% setup
 #size and length
-N = 300
+N = 500
 T = 100
 dt = 0.1
 simtime = np.arange(0,T,dt)
@@ -80,15 +79,15 @@ learn_every = 2  #effective learning rate
 #network parameters
 p = .2  #sparsity of connection
 p_glm = .2
-g = 1.5  # g greater than 1 leads to chaotic networks.
+g = 15  # g greater than 1 leads to chaotic networks.
 Q = 1.
 E = (2*np.random.rand(N,1)-1)*Q
 alpha = 1.  #learning initial constant
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 nbasis = 5
 pad = 100
-spkM = 1
-tau = 1
+spkM = 1.
+gain = 1.
 thetas = np.random.randn(N,N,nbasis)/1  #tensor of kernel weights
 M_ = np.random.randn(N,N)*g*scale
 sparse = np.random.rand(N,N)
@@ -96,10 +95,10 @@ mask = np.random.rand(N,N)
 mask[sparse>p] = 0
 mask[sparse<=p] = 1
 
-for ii in range(N) :
-    jj = np.where(np.abs(M_[ii,:])>0)
-    M_[ii,jj] = M_[ii,jj] - np.sum(M_[ii,jj])/len(jj)
-M_ = M_ * mask
+#for ii in range(N) :
+#    jj = np.where(np.abs(M_[ii,:])>0)
+#    M_[ii,jj] = M_[ii,jj] - np.sum(M_[ii,jj])/len(jj)
+#M_ = M_ * mask
 
 Ks = (np.fliplr(basis_function1(pad,nbasis).T).T).T
 allK = np.zeros((N,N,pad))  #number of kernels x length of time window
@@ -119,6 +118,7 @@ for ii in range(N):
             allK[ii,jj,:] = temp*mask[ii,jj]
 
 #input parameters
+pN = 100 ### length, number of neurons, in this sequence
 wo = np.ones((N,1))
 dw = np.zeros((N,1))
 wf_w = 2.0*(np.random.randn(N,nbasis)-0.5)
@@ -138,18 +138,26 @@ def get_seq(N,T,width):
         Km[nn,:] = np.exp(-(xx-ii)**2/width**2)
         ii+=tile
     return Km
-l = 300
-Km = get_seq(N,len(simtime),l)
-ft = Km*100  #rescaled target pattern
+l = 10
+Km = get_seq(N,(simtime_len),l)
+#Km = get_seq(N,int(len(simtime)/4),l)
+ft = Km*1-0.  #rescaled target pattern
+#ft = np.concatenate((ft,ft),1)
+#ft = np.concatenate((ft,ft),1)
+#ft = np.repeat(ft, 3, axis=1)  #three repeats for training
+ft = np.concatenate((np.zeros((N,pad)), ft), axis=1)  #padding for data length
+stim_t = np.convolve(np.random.randn(simtime_len),np.ones(50),'same')  #cue
+stim_t = stim_t - min(stim_t)
+stim_t = stim_t/max(stim_t)*.1  #rescaled input cue
 
 #initial conditions
 wo_len = np.zeros(simtime_len)
 zt = np.zeros_like(ft)
 x0 = 0.5*np.random.randn(N)
-z0 = 0.5*np.random.randn(1)
+z0 = 0.5*np.random.randn(N)
 xt = np.zeros((N,pad))
 rt = np.zeros((N,pad))
-spks = np.zeros((N,pad))
+spks = np.zeros((N,simtime_len))
 
 xt[:,0] = x0
 rt[:,0] = NL(xt[:,0],spkM)
@@ -159,9 +167,12 @@ z = z0
 P = (1.0/alpha)*np.eye(N)
 for tt in range(pad+1, len(simtime)):
     #GLM-RNN
-    tens = NL( np.einsum('ijk,jk->i',  allK, spks), spkM) 
-    spks_ = spiking( (M_ @ tens +0) , dt) #+ stim[:,tt]
-    spks = np.concatenate((spks[:,1:],spks_[:,None]),axis=1)  #time iterative update
+#    tens = NL( np.einsum('ijk,jk->i',  allK, spks), spkM) 
+#    spks_ = spiking( (M_ @ tens +0) , dt) #+ stim[:,tt]
+#    spks = np.concatenate((spks[:,1:],spks_[:,None]),axis=1)  #time iterative update
+    tens = NL( np.einsum('ijk,jk->i',  allK, spks[:,tt-pad-1:tt-1]), spkM) + stim_t[tt]
+    spks_ = spiking( (M_ @ tens) , dt)  #generate spike s with current u
+    spks[:,tt] = spks_
     rt = tens
     
     #reconstruct dynamics
@@ -183,8 +194,9 @@ for tt in range(pad+1, len(simtime)):
         wo = wo + dw
         
         # update the internal weight matrix using the output's error
-        M_ = M_ + dw
+        M_[:,:] = M_[:,:] + mask*np.repeat(dw,N,1)#dw
         #np.repeat(dw,N,1).T
+#        M_ = M_*mask
      
     #print(tt,z)
     # Store the output of the system.
@@ -193,8 +205,8 @@ for tt in range(pad+1, len(simtime)):
     
 # %% plotting
 plt.figure()
-error_avg = sum(abs(zt-ft[:]))/simtime_len
-print(['Training MAE: ', str(error_avg)]) 
+#error_avg = sum(abs(zt-ft[:]))/simtime_len
+#print(['Training MAE: ', str(error_avg)]) 
 print('mean firing:', np.mean(spks))  
 print(['Now testing... please wait.'])
 
@@ -213,14 +225,16 @@ plt.imshow(spks,aspect='auto')
 # %% testing
 zpt = np.zeros_like(zt)
 M0 = np.random.randn(N,N)*g*scale
-spks = np.zeros((N,pad))
+spks = np.zeros((N,simtime_len))
 
 for tt in range(pad+1, len(simtime)):
     #GLM-RNN
-    tens = NL( np.einsum('ijk,jk->i',  allK, spks), spkM)
-    spks_ = spiking( (M_ @ tens +0) , dt) #+ stim[:,tt]
-    spks = np.concatenate((spks[:,1:],spks_[:,None]),axis=1)  #time iterative update
-    rt = tens
+#    tens = NL( np.einsum('ijk,jk->i',  allK, spks), spkM)
+#    spks_ = spiking( (M_ @ tens +0) , dt) #+ stim[:,tt]
+#    spks = np.concatenate((spks[:,1:],spks_[:,None]),axis=1)  #time iterative update
+    tens = NL( np.einsum('ijk,jk->i',  allK, spks[:,tt-pad-1:tt-1]), spkM) + stim_t[tt]
+    spks_ = spiking( (M_ @ tens) , dt)  #generate spike s with current u
+    spks[:,tt] = spks_
   
     #reconstruct dynamics
     z = wo* tens[:,None]  #is now a vector
@@ -238,13 +252,39 @@ error_avg = sum(abs(zpt-ft[:]))/simtime_len
 print(['Training MAE: ', str(error_avg)]) 
 print('mean firing:', np.mean(spks))
 
-# %% analysis
+# %%
+temp = spks.copy()
+locs = np.zeros(N)
+for nn in range(N):
+    locs[nn] = np.where(temp[nn,:]==np.max(temp[nn,:]))[0][0]
+sort_seq = np.argsort(locs)
 plt.figure()
-plt.plot(Rs_tr,MSE_tr,'o',markersize=20,label='test')
-plt.plot(Rs_te,MSE_te,'o',markersize=20,label='train')
-plt.xlabel('mean Poisson rate',fontsize=40)
-plt.ylabel('MSE',fontsize=40)
-plt.legend(fontsize=30)
+plt.imshow(temp[sort_seq,:]/np.max(temp[sort_seq,:],1)[:,None],aspect='auto')
+plt.xlabel('time', fontsize=40)
+plt.ylabel('cells', fontsize=40)
+
+# %% draw spiks
+p_rate = temp[sort_seq,:]/np.max(temp[sort_seq,:],1)[:,None]
+cutoff = 300
+p_rate = p_rate[cutoff:,pad:]
+spk_raster = np.zeros((p_rate.shape[0], p_rate.shape[1]))
+spk_raster[p_rate*1.> np.random.rand(p_rate.shape[0], p_rate.shape[1])] = 1
+plt.figure()
+plt.imshow(spk_raster, aspect='auto')
+plt.xlabel('time', fontsize=40)
+plt.ylabel('cells', fontsize=40)
+
+test = np.where(spk_raster>0)
+plt.figure()
+plt.plot(np.flipud(test[1][:,None]),np.flipud(test[0][:,None]),'ko')
+
+# %% analysis
+#plt.figure()
+#plt.plot(Rs_tr,MSE_tr,'o',markersize=20,label='test')
+#plt.plot(Rs_te,MSE_te,'o',markersize=20,label='train')
+#plt.xlabel('mean Poisson rate',fontsize=40)
+#plt.ylabel('MSE',fontsize=40)
+#plt.legend(fontsize=30)
 
 # %% Target dynamics
 ###############################################################################
@@ -275,5 +315,136 @@ for ii,tt in enumerate(time_points):
     stim_[:,tt:tt+imp_dur] = np.repeat(impulse[:,None]*imp_a[ii],imp_dur,axis=1)
 
 # %% 3-bit (with higher dimension)
+    
+    
+###############################################################################
+# %% Back to determinisitic model now
+###############################################################################
+# %%
+# %% parameters
+N = 500  #number of neurons
+p = .2  #sparsity of connection
+g = 1.5  # g greater than 1 leads to chaotic networks.
+alpha = 1.  #learning initial constant
+dt = 0.1
+nsecs = 200
+learn_every = 2  #effective learning rate
 
+scale = 1.0/np.sqrt(p*N)  #scaling connectivity
+M = np.random.randn(N,N)*g*scale
+sparse = np.random.rand(N,N)
+#M[sparse>p] = 0
+mask = np.random.rand(N,N)
+mask[sparse>p] = 0
+mask[sparse<=p] = 1
+#M = M*mask  ### fully connected here!!
+
+nRec2Out = N
+wo = np.zeros((nRec2Out,1))
+dw = np.zeros((nRec2Out,1))
+wf = 2.0*(np.random.rand(N,1)-0.5)
+
+simtime = np.arange(0,nsecs,dt)
+simtime_len = len(simtime)
+
+###target pattern
+pN = 50
+def get_seq(N,T,width):
+    Km = np.zeros((N,T))
+    xx = np.arange(T)
+    tile = int(T/N)
+    ii = 0
+    for nn in range(N):
+        Km[nn,:] = np.exp(-(xx-ii)**2/width**2)
+        ii+=tile
+    return Km
+l = 100
+Km = get_seq(N,simtime_len,l)
+ft = Km*1  #rescaled target pattern
+
+wo_len = np.zeros((1,simtime_len))    
+zt = np.zeros((N,simtime_len))
+x0 = 0.5*np.random.randn(N,1)
+z0 = 0.5*np.random.randn(1)
+xt = np.zeros((N,simtime_len))
+rt = np.zeros((N,simtime_len))
+
+x = x0
+r = np.tanh(x)
+z = z0
+
+# %% FORCE learning
+ti = 0
+P = (1.0/alpha)*np.eye(nRec2Out)
+for t in range(len(simtime)-1):
+    ti = ti+1
+    x = (1.0-dt)*x + M @ (r*dt) #+ wf * (z*dt)
+    r = np.tanh(x)
+    rt[:,t] = r[:,0]  #xt[:,t] = x[:,0]
+    z = wo*r #wo.T @ r
+    
+    if np.mod(ti, learn_every) == 0:
+        k = P @ r;
+        rPr = r.T @ k
+        c = 1.0/(1.0 + rPr)
+        P = P - k @ (k.T * c)  #projection matrix
+        
+        # update the error for the linear readout
+        e = z-ft[:,ti][:,None]
+        
+        # update the output weights
+        dw = -e*k*c
+        wo = wo + dw
+        
+        # update the internal weight matrix using the output's error
+        M[:,:] = M[:,:] + mask*np.repeat(dw,N,1)#0.0001*np.outer(wf,wo)
+        #np.repeat(dw,N,1).T#.reshape(N,N).T
+        #np.outer(wf,wo)
+        #np.repeat(dw.T, N, 1);
+#        M = M*mask           
+
+    # Store the output of the system.
+    zt[:,ti] = np.squeeze(z)
+    wo_len[0,ti] = np.sqrt(wo.T @ wo)	
+
+zt = np.squeeze(zt)
+error_avg = sum(abs(zt-ft))/simtime_len
+print(['Training MAE: ', str(error_avg)])   
+print(['Now testing... please wait.'])
+
+plt.figure()
+plt.plot(ft.T)
+plt.plot(zt.T,'--')
+
+plt.figure()
+plt.imshow(rt,aspect='auto')
+# %% testing
+zpt = np.zeros((N,simtime_len))
+ti = 0
+x = x0
+r = np.tanh(x)
+z = z0
+for t in range(len(simtime)-1):
+    ti = ti+1 
+    
+    x = (1.0-dt)*x + M @ (r*dt) #+ wf * (z*dt)
+    r = np.tanh(x)
+    z = wo*r#wo.T @ r
+
+    zpt[:,ti] = z.squeeze()
+
+zpt = np.squeeze(zpt)
+plt.figure()
+plt.subplot(211)
+plt.imshow(ft,aspect='auto')
+plt.subplot(212)
+plt.imshow(zpt,aspect='auto')
+
+# %%
+locs = np.zeros(N)
+for nn in range(N):
+    locs[nn] = np.where(zpt[nn,:]==np.max(zpt[nn,:]))[0][0]
+sort_seq = np.argsort(locs)
+plt.figure()
+plt.imshow(zpt[sort_seq,:],aspect='auto') #/np.max(zpt[sort_seq,:],1)[:,None]
 

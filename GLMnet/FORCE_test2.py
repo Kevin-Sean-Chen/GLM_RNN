@@ -208,10 +208,10 @@ spkM = 1.
 tau = 1
 thetas = np.random.randn(N,N,nbasis)/1  #tensor of kernel weights
 M_ = np.random.randn(N,N)*g*scale
-cutoff = 299
-uu,ss,vv = np.linalg.svd(M_)
-ss[cutoff:] = 0
-M_ = uu @ np.diag(ss) @ vv
+#cutoff = 299
+#uu,ss,vv = np.linalg.svd(M_)
+#ss[cutoff:] = 0
+#M_ = uu @ np.diag(ss) @ vv
 sparse = np.random.rand(N,N)
 mask_J = np.random.rand(N,N)
 mask_J[sparse>p] = 0
@@ -395,15 +395,19 @@ plt.fill_between(np.arange(len(kmea)),kmea-kstd, kmea+kstd, alpha=0.5)
 plt.figure()
 plt.plot(ks.T)
 
+# %%
+import pickle
+with open('GFORCE_condition.pickle', 'rb') as f:
+    g_force, g_force015, g_force15, g_force_hom, g_force_lin = pickle.load(f)
 # %% plots for condition
 plt.figure()
 plt.plot()
 plt.plot(ft[pad:-pad],'k', label='target',linewidth=20)
-plt.plot(g_force[pad:],'orange',alpha = 0.8,label='g=1.5',linewidth=10)
-plt.plot(g_force015[pad:]-200,'b',alpha = 0.8,label='g=0.15',linewidth=10)
-plt.plot(g_force15[pad:]-400,'r',alpha = 0.8,label='g=15',linewidth=10)
-plt.plot(g_force_hom[pad:]-600,'-o',alpha = 0.8,label='identical h',linewidth=10)
-plt.plot(g_force_lin[pad:]-800,'-*',alpha = 0.8,label='linear f',linewidth=10)
+plt.plot(g_force[pad:],'orange',alpha = 0.8,label='g=1.5',linewidth=8)
+plt.plot(g_force015[pad:]-200,'b',alpha = 0.8,label='g=0.15',linewidth=8)
+plt.plot(g_force15[pad:]-400,'r',alpha = 0.8,label='g=15',linewidth=8)
+plt.plot(g_force_hom[pad:]-600,'purple',alpha = 0.8,label='identical h',linewidth=8)
+plt.plot(g_force_lin[pad:]-800,'g',alpha = 0.8,label='linear f',linewidth=8)
 plt.legend(fontsize=50,loc='center left', bbox_to_anchor=(1, 0.5))
 plt.yticks([])
 

@@ -85,9 +85,9 @@ sparse = np.random.rand(N,N)
 mask_J = np.random.rand(N,N)
 mask_J[sparse>p] = 0
 mask_J[sparse<=p] = 1
-gain = 1.  #for lower firing rate
+gain = .9  #for lower firing rate
 tau_r = 100*np.random.rand(N)  #important long self-spike time constant
-spkM = .01  #if there's sigmoid nonlinearity
+spkM = 1.  #if there's sigmoid nonlinearity
 
 for ii in range(N) :
     jj = np.where(np.abs(M_[ii,:])>0)
@@ -109,12 +109,13 @@ for ii in range(N):
     for jj in range(N):
         temp = np.dot(thetas[ii,jj,:], Ks)
         if ii==jj:
-#            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )*np.random.choice([1,-1],1)[0]
-            allK[ii,jj,:] = 0#temp
+#            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )#*np.random.choice([1,-1],1)[0]
+            allK[ii,jj,:] = temp
         else:
 #            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )*np.random.choice([1,-1],1)[0]
-            allK[ii,jj,:] = temp*mask[ii,jj] #0
-            
+            allK[ii,jj,:] = 0#temp*mask[ii,jj] #0
+h_hist = np.dot( np.array([-1,-0.5,-0.2,-0.1,0.1]) , Ks ) 
+           
 #input parameters
 wo = np.ones((N,1))
 dw = np.zeros((N,1))
@@ -148,9 +149,11 @@ for tt in range(pad+1, len(simtime)):
     ### GLM-RNN
     lin_v = (1-dt/tau_r)*rt[:,tt-1] + spks[:,tt-1]*dt/tau_r  #slow recover
 #    lin_v = NL(np.einsum('ijk,jk->i',  allK, spks[:,tt-pad-1:tt-1]) , spkM)  #linear or nonlinear
-    #    lin_v[lin_v<0] = 0  #rectification
+#    lin_v = lin_v - 0.1*rt[:,tt-1]
+#    lin_v[lin_v<0] = 0  #rectification
     rt[:,tt] = lin_v
-    spk = spiking( (M_ @ lin_v) , dt)  #generate spike s with current u
+    self_v = np.sum(h_hist[None,:]*spks[:,tt-pad-1:tt-1],1) #self-post-spike
+    spk = spiking( (M_ @ lin_v)+self_v , dt)  #generate spike s with current u
 #    spk[spk>0] = 1   #force binary
     spks[:,tt] = spk
     
@@ -217,9 +220,11 @@ for tt in range(pad+1, len(simtime)):
     #GLM-RNN
     lin_v = (1-dt/tau_r)*rt[:,tt-1] + spks[:,tt-1]*dt/tau_r  #slow recover  #linear slow dynamics
 #    lin_v = NL( np.einsum('ijk,jk->i',  allK, spks[:,tt-pad-1:tt-1]), spkM)  #linear or nonlinear here
-    #lin_v[lin_v<0] = 0  #rectification
+#    lin_v = lin_v - 0.1*rt[:,tt-1]
+#    lin_v[lin_v<0] = 0  #rectification
     rt[:,tt] = lin_v
-    spk = spiking( (M_ @ lin_v) , dt)  #generate spike s with current u
+    self_v = np.sum(h_hist[None,:]*spks[:,tt-pad-1:tt-1],1) #self-post-spike
+    spk = spiking( (M_ @ lin_v)+self_v , dt)  #generate spike s with current u
 #    spk[spk>0] = 1   #force binary
     spks[:,tt] = spk
     
@@ -299,8 +304,8 @@ plt.plot(M_.reshape(-1), lrM.reshape(-1), 'o')
 # %% Comparison of parameters
 ###############################################################################
 # %%
-print('MSE_train:', sum((zt-ft[:])**2)/sum(zt**2))
-print('MSE_test:', sum((zpt-ft[:])**2)/sum(zt**2))
+print('MSE_train:', sum((zt-ft[:])**2)/sum(ft**2))
+print('MSE_test:', sum((zpt-ft[:])**2)/sum(ft**2))
 
 # %% 
 # G-FORCE, linear f, coupling k, low-rank, deterministic
@@ -316,6 +321,34 @@ params = np.array(['G-FORCE', 'spike-FORCE', r'$g=0.15$', r'$g=15$', r'identical
 train = np.array([0.1, 0.019, 0.82, 0.094, 0.19, 0.39])
 test = np.array([0.19, 0.608, 0.99, 0.57, 2.1, 2.44])
 order = np.array([0,1,2,3,4,5])
+
+# %% data
+params = np.array(['G-FORCE', 'spike-FORCE', r'$g=0.15$', r'$g=15$', r'identical $h$', r'linear $f$',])
+train = np.array([[0.012, 0.19, 0.82, 0.194, 0.19, 0.39],
+                  [0.013, 0.19, 0.92, 0.2, 0.214, 0.42],
+                  [0.012, 0.49, 0.93, 0.15, 0.21, 0.37]])
+test = np.array([[0.09, 0.6, 0.99, 0.56, 2.1, 1.44],
+                 [0.089, 1., 0.98, 0.67, 1.2, 1.4],
+                 [0.049, 0.9, 0.99,1.4, 1.37, 1.7]])
+
+# %%
+x = np.arange(len(order))
+width = 0.35
+
+fig, ax = plt.subplots()
+rects1 = ax.bar(x - width/2, np.mean(train,0)[order], width, label='train')
+plt.errorbar(x - width/2, np.mean(train,0)[order], yerr=np.std(train,0)[order],\
+             fmt="o", color="grey", linewidth=5)
+rects2 = ax.bar(x + width/2, np.mean(test,0)[order], width, label='test')
+plt.errorbar(x + width/2, np.mean(test,0)[order], yerr=np.std(test,0)[order],\
+             fmt="o", color="grey", linewidth=5)
+
+ax.set_ylabel('MSE',fontsize=40)
+ax.set_xticks(x)
+ax.set_xticklabels(params[order], rotation=45)
+ax.legend(fontsize=40)
+
+fig.tight_layout()
 
 # %%
 x = np.arange(len(order))  # the label locations

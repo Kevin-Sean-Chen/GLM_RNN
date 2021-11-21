@@ -22,6 +22,24 @@ matplotlib.rc('ytick', labelsize=40)
 
 #%matplotlib qt5
 # %% FORCE functions
+def basis_function1(nkbins, nBases):
+    """
+    Raised cosine basis function to tile the time course of the response kernel
+    nkbins of time points in the kernel and nBases for the number of basis functions
+    """
+    #nBases = 3
+    #nkbins = 10 #binfun(duration); # number of bins for the basis functions
+    ttb = np.tile(np.log(np.arange(0,nkbins)+1)/np.log(1.5),(nBases,1))  #take log for nonlinear time
+    dbcenter = nkbins / (nBases+int(nkbins/3)) # spacing between bumps
+    width = 5.*dbcenter # width of each bump
+    bcenters = 1.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
+    def bfun(x,period):
+        return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)  #raise-cosine function formula
+    temp = ttb - np.tile(bcenters,(nkbins,1)).T
+    BBstm = [bfun(xx,width) for xx in temp] 
+    #plt.plot(np.array(BBstm).T)
+    return np.array(BBstm).T
+
 def Lorenz_dt(xyz, dt):
     ### Lorenz attractor in 3-D with parameters from the paper
     x, y, z = xyz
@@ -102,19 +120,25 @@ def G_FORCE_learning(M_, ft):
     z = z0
 
     P = (1.0/alpha)*np.eye(N)
-    for tt in range(1, T):
+    for tt in range(pad+1, T):
         #GLM-RNN
-        rec_pot = (1-dt/tau_r)*rt[:,tt-1] + spks[:,tt-1]*dt/tau_r  #slow recover
-        rt[:,tt] = rec_pot
-        spk = spiking( (M_ @ rec_pot) , dt)  #generate spike s with current u
+#        lin_v = (1-dt/tau_r)*rt[:,tt-1] + spks[:,tt-1]*dt/tau_r  #slow recover
+#        rt[:,tt] = lin_v
+#        spk = spiking( (M_ @ lin_v) , dt)  #generate spike s with current u
+#        spks[:,tt] = spk
+        
+        lin_v = NL(np.einsum('ijk,jk->i',  allK, spks[:,tt-pad-1:tt-1]) , spkM)  #linear or nonlinear
+        rt[:,tt] = lin_v
+#        self_v = np.sum(h_hist[None,:]*spks[:,tt-pad-1:tt-1],1) #self-post-spike
+        spk = spiking( (M_ @ lin_v)+0 , dt) 
         spks[:,tt] = spk
         
         #reconstruct dynamics
-        z = wo.T @ rec_pot #tens
+        z = wo.T @ lin_v #tens
         
         #learning
         if np.mod(tt, learn_every) == 0:
-            dr = (rec_pot)  #taking derivative over the nonlinearity #deNL
+            dr = (lin_v)  #taking derivative over the nonlinearity #deNL
             k = (P @ dr)[:,None]
             rPr = dr[:,None].T @ k
             c = 1.0/(1.0 + rPr)
@@ -128,7 +152,7 @@ def G_FORCE_learning(M_, ft):
             wo = wo + dw
             
             # update the internal weight matrix using the output's error
-            M_ = M_ + (E @ dw.T) #np.repeat(dw,N,1).T  #
+            M_ = M_ + np.repeat(dw,N,1).T  #(E @ dw.T) #
          
         #print(tt,z)
         # Store the output of the system.
@@ -144,13 +168,22 @@ def spiking(x,dt):
     spike = np.random.poisson(x*dt*gain)
     return spike
 
+def NL(x,spkM):
+    """
+    Passing x through logistic nonlinearity with spkM maximum
+    """
+    nl = spkM/(1+np.exp(-x))
+#    nl = x
+#    nl = np.tanh(x)
+    return nl
+
 # %% FORCE parameters
 N = 300  #number of neurons
 p = .2  #sparsity of connection
 g = 1.5  # g greater than 1 leads to chaotic networks.
 alpha = 1.0  #learning initial constant
 dt = 0.1
-nsecs = 500
+nsecs = 200
 learn_every = 2  #effective learning rate
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 
@@ -159,7 +192,7 @@ simtime = np.arange(0,nsecs,dt)
 simtime_len = len(simtime)
 amp = 0.7;
 freq = 1/60;
-rescale = 2
+rescale = 3
 ft = (amp/1.0)*np.sin(1.0*np.pi*freq*simtime*rescale) + \
     (amp/2.0)*np.sin(2.0*np.pi*freq*simtime*rescale) + \
     (amp/6.0)*np.sin(3.0*np.pi*freq*simtime*rescale) + \
@@ -169,7 +202,7 @@ ft = ft/1.5
 #ft = ft[:,0]
 
 # %% scanning network rank
-cuts = np.array([5,10,50,100,200,299])
+cuts = np.array([5,10,20,30,50,100,200,300])
 MSEs = np.zeros(len(cuts))
 times_mle = np.zeros(len(cuts))
 
@@ -186,15 +219,18 @@ for cc in range(len(cuts)):
     M = M*mask
     rt, zt, M = FORCE_learning(M, ft)
     zt = np.squeeze(zt)
-    MSEs[cc] = sum((zt-ft)**2)/sum(zt**2)
+    MSEs[cc] = sum((zt-ft)**2)/sum(ft**2)
+    print(cc)
     
 # %%
 plt.figure()
-plt.plot(cuts, MSEs, '-o',label='FORCE')
+plt.plot(cuts, MSEs, '-o',label='FORCE',linewidth=8 ,markersize=12)
 plt.xlabel('initial rank',fontsize=40)
 plt.ylabel('normalized MSE',fontsize=40)
 
-plt.plot(cuts, np.array([8,6.6,0.17,0.16,0.11,0.03]), '-o', label='G-FORCE')
+plt.plot(cuts, MSEs_glm, '-o', label='G-FORCE',linewidth=8 ,markersize=12)
+
+#plt.plot(cuts, np.array([8,6.6,0.17,0.16,0.11,0.03]), '-o', label='G-FORCE')
 plt.legend(fontsize=40)
 
 ###############################################################################
@@ -203,7 +239,7 @@ plt.legend(fontsize=40)
 # %% G-FORCE linear setup
 #size and length
 N = 300
-T = 500
+T = 200
 dt = 0.1
 simtime = np.arange(0,T,dt)
 learn_every = 2  #effective learning rate
@@ -215,22 +251,46 @@ E = (2*np.random.rand(N,1)-1)*Q
 alpha = 1.  #learning initial constant
 scale = 1.0/np.sqrt(p*N)  #scaling connectivity
 
+#coupling kernels
+pad = 100
+nbasis = 5
+p_glm = 0.2
+spkM = 1.
+Ks = (np.fliplr(basis_function1(pad,nbasis).T).T).T
+allK = np.zeros((N,N,pad))  #number of kernels x length of time window
+sparse = np.random.rand(N,N)
+mask = np.random.rand(N,N)
+mask[sparse>p_glm] = 0
+mask[sparse<=p_glm] = 1
+thetas = np.random.randn(N,N,nbasis)
+for ii in range(N):
+    for jj in range(N):
+        temp = np.dot(thetas[ii,jj,:], Ks)
+        if ii==jj:
+#            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )#*np.random.choice([1,-1],1)[0]
+            allK[ii,jj,:] = temp
+        else:
+#            temp = np.dot( np.array([-1,0.5,0.2,-0.1,0.1]) , Ks )*np.random.choice([1,-1],1)[0]
+            allK[ii,jj,:] = 0#temp*mask[ii,jj] #0
+h_hist = np.dot( np.array([-1,-0.5,-0.2,-0.1,0.1]) , Ks ) 
+
 #input parameters
 simtime_len = len(simtime)
 amp = 0.7;
 freq = 1/60;
-rescale = 2
+rescale = 3
 ft = 1*(amp/1.0)*np.sin(1.0*np.pi*freq*simtime*rescale) + \
     1*(amp/2.0)*np.sin(2.0*np.pi*freq*simtime*rescale) + \
     1*(amp/6.0)*np.sin(3.0*np.pi*freq*simtime*rescale) + \
-    1*(amp/3.0)*np.sin(4.0*np.pi*freq*simtime*rescale)
+    0*(amp/3.0)*np.sin(4.0*np.pi*freq*simtime*rescale)
 ft = ft*100
+ft = np.concatenate((np.zeros(pad),ft))
 #ft = Lorenz_model( nsecs/30 , dt/30)*5
 #ft = ft[:,0]
 
 
 # %% scanning network rank
-cuts = np.array([1,5,10,50,100,200,299])
+cuts = np.array([5,10,20,30,50,100,200,300])
 MSEs_glm = np.zeros(len(cuts))
 
 for cc in range(len(cuts)):
@@ -238,16 +298,21 @@ for cc in range(len(cuts)):
     uu,ss,vv = np.linalg.svd(M_)
     ss[cuts[cc]:] = 0
     M_ = uu @ np.diag(ss) @ vv
+    for ii in range(N) :
+        jj = np.where(np.abs(M_[ii,:])>0)
+        M_[ii,jj] = M_[ii,jj] - np.sum(M_[ii,jj])/len(jj)  #normalize weights
     sparse = np.random.rand(N,N)
     mask_J = np.random.rand(N,N)
     mask_J[sparse>p] = 0
     mask_J[sparse<=p] = 1
-    M_ = np.zeros((N,N))#M_ * mask_J
-    gain = .05  #for lower firing rate
+    M_ = M_ * mask_J #np.zeros((N,N))#
+    gain = 1#.05  #for lower firing rate
     tau_r = 100*np.random.rand(N)  #important long self-spike time constant
     
     spks, rt, zt, M_ = G_FORCE_learning(M_, ft)
-    MSEs_glm[cc] = sum((zt-ft)**2)/sum(zt**2)
+    MSEs_glm[cc] = sum((zt-ft)**2)/sum(ft**2)
+    
+    print(cc)
     
 # %%
 plt.figure()

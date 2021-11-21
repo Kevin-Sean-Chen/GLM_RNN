@@ -41,10 +41,10 @@ T = 15
 imin = 1#round(5/dt)
 icrit = len(ft)#round(10/dt)
 step = 2#50
-nt = T=len(ft)#round(T/dt)
+nt = len(ft)#round(T/dt)
 Q = 10
 G = 0.04
-zx = 2*ft.copy()#np.sin(2*np.pi*dt*50*np.arange(0,nt))
+zx = .01*ft.copy()#np.sin(2*np.pi*dt*50*np.arange(0,nt))
 
 #T = 15
 #imin = round(5/dt)
@@ -120,7 +120,7 @@ for ii in range(ilast,nt):
         if ii>imin:
             if ii<icrit:
                 cd = Pinv @ r
-                BPhi = BPhi - (cd*err)
+#                BPhi = BPhi - (cd*err)
                 Pinv = Pinv - (np.outer(cd,cd))/(1+np.dot(r,cd))
                 
     v = v + (30-v)*(v>=vpeak)
