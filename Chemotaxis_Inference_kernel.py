@@ -27,7 +27,7 @@ def temporal_kernel(alpha,tau):
     """
     D_tau = alpha*np.exp(-alpha*tau)*((alpha*tau)**5/math.factorial(5) - (alpha*tau)**7/math.factorial(7))
     return D_tau
-tt = np.linspace(0,10,10/0.6)
+tt = np.linspace(0,10/0.6,10)
 plt.plot(tt,temporal_kernel(2.,tt),'-o')
 
 #check with auto-correlation in time series
@@ -47,7 +47,7 @@ def d_theta(K_dcp, dc_perp, K, K_dc, dC):
     '''
     wv = np.dot(K_dcp,dc_perp) + K*np.random.randn()  #weathervaning strategy
     #P_event = 0.023/(0.4 + np.exp(40*dC/dt)) + 0.003  #sigmoidal function with parameters w
-    P_event = 5*0.023/(1 + np.exp(np.dot(K_dc,dC/dt)))  #less parameter version
+    P_event = 5*0.023/(1 + np.exp(np.dot(K_dc,dC/1))) + 0.005  #less parameter version
     if np.random.rand() < P_event:
         beta = 1
     else:
@@ -83,15 +83,16 @@ def dc_measure(dxy,xx,yy):
 # %%
 #gradient environment
 dis2targ = 50
-C0 = 0.2  #initial concentration
+C0 = 0.1  #initial concentration
 D = 0.000015  #diffusion coefficient (for a reasonable simulation environment)
 duT = 60*60*3  #equilibrium time
 d = 0.18  #difussion coefficient of butanone...
 
 #chemotaxis strategy parameter
-K_win = np.linspace(0,6,6/0.6)
-scaf = 50  #scale factor
-tempk = temporal_kernel(4.,K_win)/np.linalg.norm(temporal_kernel(4.,K_win))
+K_win = np.linspace(0,6/0.6,6)
+scaf = 10  #scale factor
+tempk = temporal_kernel(2.,K_win)/np.linalg.norm(temporal_kernel(2.,K_win))
+tempk = np.array([0,-1.5,1,0.5,0.1,0])
 K_dc = 100 *(tempk)+.0  #random-turning kernel (biphasic form, difference of two gammas)
 #K_dc = scaf * np.flip(temporal_kernel(0.7,K_win))
 #K_dc = K_dc - np.mean(K_dc)  #zero-mean kernel for stationary solution
@@ -124,13 +125,13 @@ for t in range(prehist,len(time)):
     #concentration = gradient(C0,xs[t-1],ys[t-1])
     #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
     #dC = np.array([gradient(C0, xs[t-past],ys[t-past])-gradient(C0, xs[t],ys[t]) for past in range(0,len(K_dc))])
-    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+2)])
+    dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+1)])  #+2
     dC = dC + np.random.randn(len(dC))*0.
     #dC = np.flip(dC)
-    dC = np.diff(dC)/dC[0] *10 #change in concentration!! (not sure if this is reasonable)
+    #dC = np.diff(dC)/dC[0] *10 #change in concentration!! (not sure if this is reasonable)
     #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+2)])
-    dc_perp = np.diff(dc_perp)/dc_perp[0]*10
+    dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)])
+    #dc_perp = np.diff(dc_perp)/dc_perp[0]*10
     dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
     ths[t] = ths[t-1] + dth*dt
     
@@ -188,13 +189,13 @@ def generate_traj(NN):
             #concentration = gradient(C0,xs[t-1],ys[t-1])
             #dC = gradient(C0, xs[t-1],ys[t-1]) - gradient(C0, xs[t-2],ys[t-2])
             #dC = np.array([gradient(C0, xs[t-past],ys[t-past])-gradient(C0, xs[t],ys[t]) for past in range(0,len(K_dc))])
-            dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+2)])
-            dC = dC + np.random.randn(len(dC))*0.00  #to add in noise for mapping
+            dC = np.array([gradient(C0, xs[t-past],ys[t-past]) for past in range(1,len(K_dc)+1)]) #+2
+            dC = dC + np.random.randn(len(dC))*0.01  #to add in noise for mapping
             #dC = np.flip(dC)
-            dC = np.diff(dC)/dC[0] *10  #change in concentration!!
+            #dC = np.diff(dC)/dC[0] *10  #change in concentration!!
             #dc_perp = dc_measure(dxy,xs[t-1],ys[t-1])  
-            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+2)]) 
-            dc_perp = np.diff(dc_perp)/dc_perp[0]*10   
+            dc_perp = np.array([dc_measure(dxy, xs[t-past],ys[t-past]) for past in range(1,len(K_dcp)+1)]) 
+            #dc_perp = np.diff(dc_perp)/dc_perp[0]*10   
             dth = d_theta(K_dcp, -dc_perp, K, K_dc, dC)
             ths[t] = ths[t-1] + dth*dt
             
@@ -272,8 +273,8 @@ def nLL(THETA, dth,dcp,dc):
     THETA includes parameter to be inferred and dth, dcp, dc are from recorded data
     """
     #a_, k_, A_, B_, C_, D_ = THETA  #inferred paramter
-    k_, A_, B_, Amp, tau = THETA[0], THETA[1], THETA[2:7], THETA[7], THETA[8] #, THETA[8]#, THETA[9] #Kappa,A,Kdc,Kdcp,dc_amp,dcp_amp
-    B_ = np.dot(B_,RaisedCosine_basis(len(K_win),5))  #test with basis function
+    k_, A_, B_, Amp, tau = THETA[0], THETA[1], THETA[2:8], THETA[8], THETA[9] #, THETA[8]#, THETA[9] #Kappa,A,Kdc,Kdcp,dc_amp,dcp_amp
+    #B_ = np.dot(B_,RaisedCosine_basis(len(K_win),5))  #test with basis function
     #B_ = 100* B_/np.linalg.norm(B_)
     #P = sigmoid(A_, B_, C_, D_, dcp)
     P = sigmoid2(A_,B_,dc)
@@ -327,7 +328,7 @@ data_th, data_dcp, data_dc = generate_traj(50)
 # %%
 #optimize all with less parameters
 theta_guess = np.array([100,0.1])  #Kappa, A
-theta_guess = np.concatenate((theta_guess,np.random.randn(5)))  #random weight for basis of Kdc kernel
+theta_guess = np.concatenate((theta_guess,np.random.randn(6)))  #random weight for basis of Kdc kernel
 # theta_guess = np.concatenate((theta_guess,np.random.randn(5)))
 theta_guess = np.concatenate((theta_guess,np.array([scaf,0.5])))  #tau,dc_amp,dcp_amp
 #theta_guess = np.concatenate((theta_guess, theta_fit[3:]))  #use a "good" inital condition from the last fit
@@ -344,14 +345,14 @@ theta_fit = res.x
 
 # %%
 ### check kernel forms!!
-fit_par = theta_fit[2:7]
-recKdc = np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
+fit_par = theta_fit[2:8]
+recKdc = fit_par#np.dot(fit_par,RaisedCosine_basis(len(K_dc),len(fit_par)))  #reconstruct Kdc kernel
 #recKdc = recKdc/np.linalg.norm(recKdc)
 plt.plot(recKdc,'b',label='K_c_fit',linewidth=3)
 plt.plot(K_dc,'b--',label='K_c',linewidth=3)  #compare form with normalized real kernel  ##/np.linalg.norm(K_dc)
-fit_par2 = theta_fit[7]  #single exponent fit
+fit_par2 = theta_fit[8]  #single exponent fit
 # recKdcp = np.dot(fit_par2,RaisedCosine_basis(len(K_dcp),len(fit_par2)))  #for basis functions
-recKdcp = fit_par2*np.exp(-K_win/theta_fit[8])
+recKdcp = fit_par2*np.exp(-K_win/theta_fit[9])
 plt.plot(recKdcp,'r',label='K_cp_fit',linewidth=3)
 #plt.hold(True)
 plt.plot(K_dcp,'r--',label='K_cp',linewidth=3)
