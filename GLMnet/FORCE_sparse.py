@@ -23,7 +23,7 @@ matplotlib.rc('ytick', labelsize=40)
 
 #%matplotlib qt5
 # %% parameters
-N =  500  #number of neurons
+N = 400  #number of neurons
 p = .2  #sparsity of connection
 g = 1.5  # g greater than 1 leads to chaotic networks.
 alpha = 1.0  #learning initial constant
@@ -47,7 +47,7 @@ nRec2Out = N
 wo = np.zeros((nRec2Out,1))
 pp = np.zeros((nRec2Out,1))
 dw = np.zeros((nRec2Out,1))
-wf = 2.0*(np.random.rand(N,1)-0.5)
+wf = 2.0*(np.random.rand(N,1)-0.5)*0.1
 
 simtime = np.arange(0,nsecs,dt)
 simtime_len = len(simtime)
@@ -73,7 +73,7 @@ r = np.tanh(x)
 z = z0
 
 # %% sparse, forgetful parameters
-lamb = .92
+lamb = .98
 ### specify filter order!!! ###
 
 eps = 1e-18
@@ -147,7 +147,7 @@ for t in range(len(simtime)-1):
         # update the internal weight matrix using the output's error
         M = M + np.repeat(dw,N,1).T#0.0001*np.outer(wf,wo)
         #np.repeat(dw,N,1).T#.reshape(N,N).T
-        #np.outer(wf,wo)
+#        M = M + wf @ wo.T #np.outer(wf,wo)
         #np.repeat(dw.T, N, 1);
 #        M = M*mask           
 

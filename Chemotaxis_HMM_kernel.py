@@ -28,7 +28,7 @@ def temporal_kernel(alpha,tau):
     """
     D_tau = alpha*np.exp(-alpha*tau)*((alpha*tau)**5/math.factorial(5) - (alpha*tau)**7/math.factorial(7))
     return D_tau
-tt = np.linspace(0,10,10/0.6)
+tt = np.linspace(0,10,int(10/0.6))
 plt.plot(tt,temporal_kernel(2.,tt),'-o')
 
 #check with auto-correlation in time series
@@ -119,7 +119,7 @@ duT = 60*60*3  #equilibrium time
 d = 0.18  #difussion coefficient of butanone...
 
 #chemotaxis strategy parameter
-K_win = np.linspace(0,6,6/0.6)
+K_win = np.linspace(0,6,int(6/0.6))
 scaf = 5  #scale factor
 tempk = temporal_kernel(4.,K_win)/np.linalg.norm(temporal_kernel(4.,K_win))
 K_dc = 10 *(tempk)+.0  #random-turning kernel (biphasic form, difference of two gammas)
@@ -150,7 +150,7 @@ dcps = np.zeros((time.shape[0],prehist))
 dths = np.zeros(time.shape)
 
 ### hidden state
-A = np.array([[0.9,0.1],[0.1,0.9]])  #transition matrix
+A = np.array([[0.95,0.01],[0.05,0.99]])  #transition matrix
 p0 = np.random.rand(states)  #initial distribution over the hidden states
 p0 = p0/sum(p0)
 ps = np.zeros((states,len(time)))  #probability to be in either states
@@ -165,13 +165,13 @@ for t in range(prehist,len(time)):
     ps[:,t] = temp/temp.sum()
     H[t] = P_state(A.T,H[t-1])#H[t] = P_state(ps[:,t])
     if H[t] == 1:  #attentive state
-        K_dc_i = K_dc*0
+        K_dc_i = K_dc*.1
         K_dcp_i = K_dcp*10
         rand = 0
         K_i = K
     elif H[t] == 0:
-        K_dc_i = -K_dc*.10
-        K_dcp_i = K_dcp*.0
+        K_dc_i = -K_dc*10
+        K_dcp_i = K_dcp*.1
         rand = 1
         K_i = K*10
     
@@ -215,7 +215,7 @@ x = np.arange(np.min(xs),np.max(xs),1)
 xx_grad = C0/(4*np.pi*d*D*duT)*np.exp(-(x-dis2targ)**2/(400*D*duT*50)) #same background environment
 plt.imshow(np.expand_dims(xx_grad,axis=1).T,extent=[np.min(xs),np.max(xs),np.min(ys),np.max(ys)])
 #plt.hold(True)
-plt.plot(xs,ys,'w.')
+plt.plot(xs,ys,'w')
 pos_i = np.where(H==0)[0]
 plt.plot(xs[pos_i],ys[pos_i],'k.')
 
