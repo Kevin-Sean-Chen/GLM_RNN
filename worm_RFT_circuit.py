@@ -156,10 +156,57 @@ plt.figure()
 plt.bar(pos,[pr_run, pr_turn])
 plt.xticks(pos, condition)
 plt.ylabel('P(reversel)',fontsize=40)
+plt.title('turn inhibited',fontsize=40)
 
 # %% forward analysis
 plt.figure()
 plt.plot(rec_speed[pre_run], rec[1,pre_run]==0, 'o')
 plt.xlabel('effective forward velocity',fontsize=30)
 plt.ylabel('reversal event (binary)',fontsize=30)
-plt.xlim([-0.3,0.3])
+plt.xlim([-0.11,0.11])
+
+
+# %% Closed-loop experiment (inhibit turns)
+# %% ##########################################################################
+# %% closed-loop exp
+in_cl = np.array([0,0,1])
+Icl = np.zeros(lt)
+Icl[4000:4500] = -.01  #stimulus impulse
+
+# %% functionize
+def RFT_cl_model():
+    xt = np.zeros((N,lt))
+    rt = xt*0
+    xt[:,0] = np.random.randn(N)*0.1
+    rt[:,0] = np.tanh(xt[:,0])
+    Jrt = np.zeros(lt)
+    Jrt[0] = Jst[0,2]
+    for tt in range(lt-1):
+        if np.argmax(rt[:,4000-500:4000].sum(1))==2:  # turning condition
+            vi,vj = np.meshgrid(xt[:,tt], xt[:,tt])
+            xt[:,tt+1] = xt[:,tt] + dt/tau*(-xt[:,tt] + Jst.T @ rt[:,tt] + (Jg*(vi-vj)).sum(0) \
+                         + inpt*Istim[tt]) + in_cl*Icl[tt] + np.random.randn(N)*np.sqrt(dt*noise)
+            Jrt[tt+1] = Jrt[tt] + dt*( -(Jrt[tt]- Js[0,2])/tau_s - max(0,.1*(1)*(rt[0,tt]+0)/tau_s) )
+            rt[:,tt+1] = np.tanh(xt[:,tt+1])
+            Jst[0,2] = Jrt[tt+1]
+            
+        else:
+            vi,vj = np.meshgrid(xt[:,tt], xt[:,tt])
+            xt[:,tt+1] = xt[:,tt] + dt/tau*(-xt[:,tt] + Jst.T @ rt[:,tt] + (Jg*(vi-vj)).sum(0) \
+                         + inpt*Istim[tt]) + np.random.randn(N)*np.sqrt(dt*noise)
+            Jrt[tt+1] = Jrt[tt] + dt*( -(Jrt[tt]- Js[0,2])/tau_s - max(0,.1*(1)*(rt[0,tt]+0)/tau_s) )
+            rt[:,tt+1] = np.tanh(xt[:,tt+1])
+            Jst[0,2] = Jrt[tt+1]
+    return rt
+
+rep = 50
+rec = np.zeros((2,rep))  # pre and post behavior with repeats
+rec_speed = np.zeros(rep)  # for analog speed
+
+for rr in range(rep):
+    rt = RFT_cl_model()
+    rec[0,rr] = np.argmax(rt[:,4000-500:4000].sum(1))
+    rec[1,rr] = np.argmax(rt[:,5000:5000+500].sum(1))
+    rec_speed[rr] = rt[int(rec[0,rr]),4000] - rt[int(rec[0,rr]),4000-500]
+    #rt[int(rec[0,rr]),4000-500:4000].sum()
+    print(rr)

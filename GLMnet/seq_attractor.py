@@ -53,10 +53,10 @@ def phi(x):
 # %% stochastic state network
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # %% parameters
-N = 200
+N = 100
 p = 2
 c = 0.1
-A = 3.
+A = 1.
 tau = 2
 sig = 0.0
 qf, qg, xf, xg = 0.65, 0.65, 1.75, 1.75
@@ -89,9 +89,9 @@ Jf = 1/N* (fg_eta(etas_,qf,xf) @ fg_eta(etas,qg,xg).T)
 #        for jj in range(N):
 #            Jf[ii,jj] += 1/(N) * fg_eta(np.array([etas_[ii,pp]]),qf,xf)*fg_eta(etas[jj,pp],qf,xf)
 ##        Jf[ii,:] = 1/(N*c) * fg_eta(np.array([etas_[ii,pp]]),qf,xf)*fg_eta(etas[:,pp],qf,xf)
-eps_ = 0.65*1
-tau_eps = 2
-sig_eps = 0.65*1
+eps_ = 0.65*1.
+tau_eps = 30
+sig_eps = 0.65*.1
 
 T = 1000
 dt = 0.1
@@ -101,6 +101,7 @@ rt = ut*1
 ept = np.zeros(lt)
 ovl = np.zeros((p,lt))
 patt = fg_eta(etas,qf,xf)
+
 # %%
 for tt in range(lt-1):
     ut[:,tt+1] = ut[:,tt] + dt/tau*( -ut[:,tt] + Js @ phi(ut[:,tt]) \
@@ -113,9 +114,15 @@ for tt in range(lt-1):
     rt[:,tt+1] = phi(ut[:,tt+1])
 
 plt.figure()
-plt.imshow(rt,aspect='auto')
+plt.imshow(rt,aspect='auto',interpolation='none')
 plt.figure()
 plt.plot(ovl.T)
+
+# %%
+plt.figure()
+plt.imshow(rt,aspect='auto', interpolation='none')
+plt.xlabel('time steps', fontsize=20)
+plt.ylabel('neurons', fontsize=20)
 
 # %% command small circuit
 ###############################################################################

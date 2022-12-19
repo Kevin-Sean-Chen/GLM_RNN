@@ -69,7 +69,7 @@ def generative_GLM(w_map, bt, dt):
     return spk, st, rt
 
 # %%
-N = 10
+N = 100
 T = 250
 dt = .1
 time = np.arange(0,T,dt)
@@ -89,9 +89,12 @@ mask = np.random.rand(N,N)
 Wij[mask<sparp] = 0
 
 bb = np.random.randn(N, lt)*UU[:,5][:,None]
+bb = (VV[0,:]+0*UU[:,0])[:,None] @ np.sin(np.arange(0,lt,1)/100)[None,:]*5
+bb = (np.ones(N)/10)[:,None] @ np.sin(np.arange(0,lt,1)/100)[None,:]*2.
 spk,st,_ = generative_GLM(Wij, bb, dt)
 
 plt.figure()
+spk[spk>0] = 1
 plt.imshow(spk, aspect='auto')
 
 # %% MEL
@@ -286,8 +289,8 @@ for ll in range(len(lrec)):
     
 # %%
 plt.figure()
-plt.plot(lrec,mls,'k',alpha=0.5,linewidth=15)
-plt.plot(lrec,lrs,'b-o',alpha=0.5,linewidth=8)
+plt.semilogy(lrec,mls,'k',alpha=0.5,linewidth=15)
+plt.semilogy(lrec,lrs,'b-o',alpha=0.5,linewidth=8)
 plt.xlabel('data length',fontsize=50)
 plt.ylabel('MSE',fontsize=50)
 plt.title('dot:low-rank ;line:MLE',fontsize=40)
@@ -305,37 +308,154 @@ plt.title('dot:low-rank ;line:MLE',fontsize=40)
 ###... too slow... should use torch~
 ###############################################################################
 # %% loading rate rt and spike spks and true M_ connectivity
-st = rt.copy()
-bb = np.zeros_like(st)
-spk = spks.copy()
-# %% MLE
-dd = N*N
-w_init = np.zeros([dd,])  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, st,spk,bb,dt,np.exp, 0.), \
-                           w_init,method='L-BFGS-B',tol=1e-5,options={'maxiter':100})
-M_map = res.x
-print(res.success)
+#st = rt.copy()
+#bb = np.zeros_like(st)
+#spk = spks.copy()
+## %% MLE
+#dd = N*N
+#w_init = np.zeros([dd,])  #Wij.reshape(-1)#
+#res = sp.optimize.minimize(lambda w: negLL(w, st,spk,bb,dt,np.exp, 0.), \
+#                           w_init,method='L-BFGS-B',tol=1e-5,options={'maxiter':100})
+#M_map = res.x
+#print(res.success)
+## %%
+#plt.figure()
+#plt.plot(M_.reshape(-1), M_map,'o')
+#plt.xlabel(r'$W_{ture}$',fontsize=45)
+#plt.ylabel(r'$W_{inferred}$',fontsize=45)
+#
+## %% low-rank
+#C1,C2 = np.eye(N),np.eye(N)
+#rankp = 2 
+#dd = N*2*rankp
+#w_init = np.random.randn(dd)  #np.concatenate((v1,v2))#Wij.reshape(-1)#
+#res = sp.optimize.minimize(lambda w: negll_lowrank_basis(w, st,spk,bb,dt,C1,C2,np.exp),w_init,\
+#                           method='L-BFGS-B',tol=1e-5,options={'maxiter':100})
+#M_low_map_basis = res.x
+#print(res.success)
+## %%
+#mm_, nn_ = M_low_map_basis[:N*rankp], M_low_map_basis[N*rankp:]
+#mm_,nn_ = mm_.reshape(rankp, N), nn_.reshape(rankp, N)
+#M_low = mm_.T @ nn_
+#
+#plt.figure()
+#plt.plot(M_.reshape(-1), M_low.reshape(-1),'o')
+#plt.xlabel(r'$W_{ture}$',fontsize=45)
+#plt.ylabel(r'$W_{inferred}$',fontsize=45)
+
+
+# %%
+###############################################################################
+# %%
+### Introduce low-rank latent dynamics
+###############################################################################
+# %% target dynamics
+T = 200
+dt = 0.1
+time = np.arange(0,T,dt)
+lt = len(time)
+per = 5  # period
+amp = 1.  # amplitude
+ld = 2
+k_target = np.vstack((np.cos(time/per),np.sin(time/per*.5+0*np.pi)))*amp
+k_target = k_target-np.min(k_target)
+plt.figure()
+plt.plot(k_target.T)  # target latent dynamics
+
+# %% networ setting
+# network
+N = 100  # number of neurons
+Mv = np.random.randn(N,ld)/N  # left matrix
+Nv = np.random.randn(N,ld)/N  # right matrix
+yt = np.zeros((N,lt))  # spike time series
+kappa = k_target + np.random.randn(ld,lt)*0  # latent time series
+filty = yt*0  # filtered spikes
+# neurons
+bi = np.random.rand(N)*0.1  # baseline firing for each neuron
+pad = 20
+vect = np.arange(pad)
+taus = np.random.rand(N)*10
+kernels = np.fliplr(np.array([ np.exp(-vect/taui) for taui in taus ])) # N x pad filter
+signs = np.random.randint(0,2,N)*2-1
+kernels = kernels*signs[:,None]
+ref = -10*np.exp(-vect/2)
+ref = np.squeeze(np.fliplr(ref[None,:]).T)
+def nl(x):
+#    return np.exp(x)#
+    return 3/(1+np.exp(-x))
+
+def poisson_ll(w,Y,X,dt,f):
+    """
+    weights w, spikes Y, history X, time step dt, and nonlinear d
+    """
+    ww = w.reshape(N,ld)
+    ll = np.sum(Y*np.log(f(ww@X)) - f(ww@X)*dt)
+    return ll
+    
+# another network
+Mvd = Mv*1
+ytd = yt*1
+filtyd = filty*1
+# background
+M0 = np.random.randn(N,N)*1/np.sqrt(N)*2.
+
+# %%
+# iterations
+its = 20
+errt = np.zeros(its)
+P = np.eye(N)
+for ii in range(its):
+    print(ii)
+    ###
+    ### learn M if there is target spikes (with poisson-LL)...
+    ### 
+    for tt in range(pad,lt-1):
+        lamb = Mv @ kappa[:,tt] + bi + 1*M0@filty[:,tt]  # conditional density
+        yt[:,tt+1] = np.random.poisson(nl(lamb + np.sum(ref*yt[:,tt-pad:tt],1))*dt)  #poisson spikes
+        filty[:,tt+1] = (np.sum(kernels*yt[:,tt-pad:tt],1))  # with fixed spike filtering
+        kappa[:,tt+1] = Nv.T @ filty[:,tt+1]  # encoding the latent kappa
+        
+        ### f-FORCE stile driven poisson RNN
+        lambd = Mvd @ k_target[:,tt] + bi + 1*M0@filtyd[:,tt]
+        ytd[:,tt+1] = np.random.poisson(nl(lambd)*dt)
+        filtyd[:,tt+1] = (np.sum(kernels*ytd[:,tt-pad:tt],1))
+    
+        ### learning Nv with IRLS
+#        k = P @ filty[:,tt]
+#        rPr = np.dot(k,filty[:,tt])
+#        c = 1.0/(1.0 + rPr)
+#        P = P - np.outer(k , (k.T * c))  # online inverse covariance matrix
+#        e = kappa[:,tt] - k_target[:,tt]
+#        dw = -np.outer(k,e)*c   # update the right matrix weights
+#        Nv = Nv + dw
+        
+#        ### learning Mv wrt poisson LL
+        u = np.exp(Mv @ kappa[:,tt])  # expected
+        G = (np.outer(kappa[:,tt],u)/u).T*np.outer((ytd[:,tt]-u) , kappa[:,tt])  # gradient
+#        H = kappa@np.diag(u)@kappa.T  # Hessian ???
+        H = np.eye(2)*10**7
+        Mv = Mv - (np.linalg.pinv(H) @ G.T).T
+        
+    ### learning with target latent ... offline
+    # RRR for N
+    Nv = (k_target @ filty.T @ np.linalg.pinv(filty @ filty.T)).T
+    # poisson for M (try gradients)
+#    res = sp.optimize.minimize(lambda w: -poisson_ll(w,ytd,k_target,dt,nl), Mv.reshape(-1), method='L-BFGS-B', tol=1e-4,options={'disp': True})
+#    Mv = (res.x).reshape(N,ld)
+#    u = np.exp(Mv @ kappa)  # expected
+#    G = (ytd-u) @ kappa.T  # gradient
+#    H = np.sum(np.array([kappa@np.diag(uv)@kappa.T for uv in u]),0)  # Hessian ???
+##    H = np.eye(2)*10**7
+#    Mv = Mv - (np.linalg.pinv(H) @ G.T).T
+    
+    errt[ii] = np.sum((kappa-k_target)**2)/lt/ld
+
 # %%
 plt.figure()
-plt.plot(M_.reshape(-1), M_map,'o')
-plt.xlabel(r'$W_{ture}$',fontsize=45)
-plt.ylabel(r'$W_{inferred}$',fontsize=45)
-
-# %% low-rank
-C1,C2 = np.eye(N),np.eye(N)
-rankp = 2 
-dd = N*2*rankp
-w_init = np.random.randn(dd)  #np.concatenate((v1,v2))#Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negll_lowrank_basis(w, st,spk,bb,dt,C1,C2,np.exp),w_init,\
-                           method='L-BFGS-B',tol=1e-5,options={'maxiter':100})
-M_low_map_basis = res.x
-print(res.success)
-# %%
-mm_, nn_ = M_low_map_basis[:N*rankp], M_low_map_basis[N*rankp:]
-mm_,nn_ = mm_.reshape(rankp, N), nn_.reshape(rankp, N)
-M_low = mm_.T @ nn_
-
+plt.plot(errt)
+plt.xlabel('iteractions',fontsize=40)
+plt.ylabel('error',fontsize=40)
 plt.figure()
-plt.plot(M_.reshape(-1), M_low.reshape(-1),'o')
-plt.xlabel(r'$W_{ture}$',fontsize=45)
-plt.ylabel(r'$W_{inferred}$',fontsize=45)
+plt.plot(kappa.T)
+plt.plot(k_target.T,'--')
+
