@@ -15,7 +15,8 @@ matplotlib.rc('xtick', labelsize=25)
 matplotlib.rc('ytick', labelsize=25)
 
 # %% load connectome
-file = r'/home/kschen/Downloads/NeuronConnect.xls'
+#file = r'/home/kschen/Downloads/NeuronConnect.xls'
+file = r'C:/Users/kevin/Downloads/NeuronConnect.xls'
 df = pd.read_excel(file)
 neuron_i = df['Neuron 1'].to_numpy()  #pre
 neuron_j = df['Neuron 2'].to_numpy()  #post
@@ -72,30 +73,33 @@ def sigmoid(x):
     return r
 
 ### single cell property
-tau = 2  #time constant
-D = .5  #noise strength
+tau = 1.  #time constant
+D = .1  #noise strength
 pi = 0.3  #portion of inhibition
-gg = 1.5
+gg = 15
 
 ### synaptic statistics
 J_dale = J*0+1
 prob_inh = np.random.rand(nn)
-J_dale[prob_inh<pi,:] = -1
+pos_ex = np.where(prob_inh>=pi)[0]
+pos_in = np.where(prob_inh<pi)[0]
+J_dale[pos_in,:] = -1
 J_wei = np.random.randn(nn,nn)*gg/np.sqrt(nn*pi)
+JJ = J_s*J_dale*J_wei
 
 ### network dynamics
 Vs = np.zeros((nn,lt))  #voltage traces
 for tt in range(lt-1):
     vi, vj = np.meshgrid(Vs[:,tt], Vs[:,tt])
-    Vs[:,tt+1] = Vs[:,tt] + dt/tau*(-Vs[:,tt] + 10.*(J_s*J_dale*J_wei) @ sigmoid(Vs[:,tt])\
-                                    - .1*(J_g*(vi-vj)).sum(0)) + np.sqrt(dt*D)*np.random.randn(nn)
+    Vs[:,tt+1] = Vs[:,tt] + dt/tau*(-Vs[:,tt] + 1.*(JJ) @ sigmoid(Vs[:,tt])\
+                                    - .0*(J_g*(vi-vj)).sum(0)) + np.sqrt(dt*D)*np.random.randn(nn)
     
 # %%
 plt.figure()
 plt.subplot(211)
 plt.imshow(Vs,aspect='auto')
 plt.subplot(212)
-plt.plot(Vs.T)
+plt.plot(Vs.T);
 
 # %% Behavioral dynamics
 # %%

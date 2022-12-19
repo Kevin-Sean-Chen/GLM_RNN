@@ -16,8 +16,8 @@ sns.set_style("white")
 sns.set_context("talk")
 
 import matplotlib 
-matplotlib.rc('xtick', labelsize=20) 
-matplotlib.rc('ytick', labelsize=20) 
+matplotlib.rc('xtick', labelsize=40) 
+matplotlib.rc('ytick', labelsize=40) 
 
 # %% Circuit dynamics
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -162,8 +162,8 @@ class Circuit_dynamics(object):
         elif model=='line':
             ### Line attractor ###
             Ithresh = np.array([-20, -20]);
-            W = np.array([[0.7, -0.3],
-                          [-0.3, 0.7]])  #weight matrix
+            W = np.array([[0.7, -0.4],
+                          [-0.4, 0.7]])  #weight matrix
             rinit1 = np.array([30, 75])
             Iapp1 = np.array([ 1, 0])
             Iapp2 = np.array([2, 0])
@@ -184,7 +184,7 @@ class Circuit_dynamics(object):
         #stimuli
         Iapp = np.zeros((N,lt))      # Array of time-dependent and unit-dependent current
         Ion1 = 1;                    # Time to switch on
-        Ion2 = 2;                    # Time to switch on
+        Ion2 = 3;                    # Time to switch on
         Idur = 0.1;                  # Duration of current
         
         non1 = round(Ion1/dt)            # Time step to switch on current
@@ -201,9 +201,9 @@ class Circuit_dynamics(object):
         tau_m = 0.01  #membrane time constant  #0.01
         tau_r = 0.05  #synaptic rise time scale  #0.05
         tau_d = 0.01   #synaptic decay time  #0.01
-        v_the = 9.5    #spik threshold  #13  #7.5  #9.5
+        v_the = 5.5    #spik threshold  #13  #7.5  #9.5
         v_res = -1     #reset potential after spiking  #-10 #-1 #-1
-        lamb = 35    #factor from rate to spiking networks  #140  #70  #35
+        lamb = 70    #factor from rate to spiking networks  #140  #70  #35
         vm = np.zeros((N,lt))  #for membrane potential
         rs = np.zeros((N,lt))  #for spike rate
         ss = np.zeros((N,lt))  #for synaptic input
@@ -427,8 +427,18 @@ J = np.array([[-.5,-0.9],[0.1,-.5]])
 #C_ = Circuit_dynamics(T=T, N=N, J=J, A=1, n_pump = 'sine', dt = dt)
 #xx,ss,rr,stim = C_.simulation()
 T, N, dt = 3, 2, 0.001
-C_ = Circuit_dynamics(T=3, N=2, J=J, A=1, n_pump = 'sine', dt = dt)
-xx,ss,rr,stim = C_.simulation_pattern('bistable')
+C_ = Circuit_dynamics(T=5, N=2, J=J*1, A=1, n_pump = 'None', dt = dt)
+xx,ss,rr,stim = C_.simulation_pattern('line')
+
+# %%
+plt.figure()
+plt.subplot(211)
+plt.plot(stim.T)
+plt.ylabel('input',fontsize=40)
+plt.subplot(212)
+plt.plot(rr.T)
+plt.xlabel('time',fontsize=40)
+plt.ylabel('activity',fontsize=40)
 
 # %% GLM inference
 pad = 50
