@@ -17,14 +17,15 @@ import matplotlib
 matplotlib.rc('xtick', labelsize=40) 
 matplotlib.rc('ytick', labelsize=40) 
 
+#torch.autograd.set_detect_anomaly(True)
+
 # %%
-class RSNN(nn.Module , torch.autograd.Function):
+class RSNN(nn.Module):# , torch.autograd.Function):
     
     def __init__(self, input_dim, net_dim, output_dim, tau, dt, spk_param, init_std=1.):
         """
         Initialize an RSNN
-        
-        parameters:
+        parameters:...
         input_dim: int
         net_dim: int
         output_dim: int
@@ -40,8 +41,9 @@ class RSNN(nn.Module , torch.autograd.Function):
         self.output_dim = output_dim
         self.dt = dt
         self.tau = tau
-        self.thr, self.temp, self.damp = spk_param  # spiking threshold, temperature, and dampled factor
-        self.spike_op = self.Spike.apply  # snn-torch spike-opteration class
+        thr, temp, damp = spk_param
+        self.thr, self.temp, self.damp = thr, temp, damp  # spiking threshold, temperature, and dampled factor
+        self.spike_op = self.Spike(temp,damp).apply  # snn-torch spike-opteration class
         
         # Defining the parameters of the network
         self.J = nn.Parameter(torch.Tensor(net_dim, net_dim))     # connectivity matrix
@@ -90,29 +92,32 @@ class RSNN(nn.Module , torch.autograd.Function):
         zt = torch.zeros((n_trials, T+1 , self.N))  # spiking time series
         if initial_state is not None:
             vt[0] = initial_state
-            zt[0] = self.spikefunction(vt[0])
+#            zt[0] = self.spikefunction(vt[0])
+            zt[0] = self.spike_op(self.pre_spk(vt[0]))
         output_seq = torch.zeros((n_trials, T, self.output_dim))  # output time series
         
         # loop through time
         for t in range(T):
-            vt[:,t+1] = (1 - self.dt/self.tau)*vt[:,t] + self.dt/self.tau*(torch.sigmoid(vt[:,t]) @ self.J.T + inputs[:,t] @ self.B.T)
-            zt[:,t+1] = self.spikefunction(vt[:,t+1])
-            output_seq[:,t] = self.NL(vt[:,t+1]) @ self.W.T     
+            vt[:,t+1] = (1 - self.dt/self.tau)*vt[:,t] + self.dt/self.tau*(self.pre_spk(zt[:,t]) @ self.J.T + inputs[:,t] @ self.B.T)
+#            zt[:,t+1] = self.spikefunction(vt[:,t+1])
+            zt[:,t+1] = self.spike_op(self.pre_spk(vt[:,t+1]))
+            output_seq[:,t] = self.pre_spk(vt[:,t+1]) @ self.W.T
+#            output_seq[:,t] = self.NL(vt[:,t+1]) @ self.W.T     
         
-        self.save_for_backward(vt)  # test with this
+#        self.save_for_backward(vt)  # test with this
         
         return vt, zt, output_seq
     
-    @staticmethod
-    def backward(self, grad_output):
-        """
-        Custom backward pass for RNN gradients
-        """
-        v_scaled, = self.saved_tensors
-        dE_dz = grad_output*1
-        dz_dv_scaled = self.pseudo_derivative(v_scaled)
-        dE_dv_scaled = dE_dz * dz_dv_scaled
-        return dE_dv_scaled
+#    @staticmethod
+#    def backward(self, grad_output):
+#        """
+#        Custom backward pass for RNN gradients
+#        """
+#        v_scaled, = self.saved_tensors
+#        dE_dz = grad_output*1
+#        dz_dv_scaled = self.pseudo_derivative(v_scaled)
+#        dE_dv_scaled = dE_dz * dz_dv_scaled
+#        return dE_dv_scaled
     
     def pseudo_derivative(self, v_scaled):
         """
@@ -129,6 +134,15 @@ class RSNN(nn.Module , torch.autograd.Function):
         nl = torch.tanh(x)
         return nl
     
+    def pre_spk(self, mem):
+        """
+        input raw memebrane mem and rescale, weight, and pass through NL
+        this is a function used for the spiking class method
+        """
+        mem1 = (mem - self.thr)/self.thr
+        mem2 = self.NL(self.temp * mem1)
+        return mem2
+    
     def spikefunction(self, vt):
         """
         Stochastic spiking through Bernoulli process with rescaled/threshold voltage
@@ -144,15 +158,21 @@ class RSNN(nn.Module , torch.autograd.Function):
         with this subclass, directly use Function.apply for spiking process 
         and the gradient step follows
         """
+        def __init__(self, temp, damp):
+            super().__init__()
+            self.temp = temp
+            self.damp = damp
         @staticmethod
         def forward(ctx, v):
-            spk = (v > 0).float() # Heaviside on the forward pass
-            ctx.save_for_backward(spk)  # store the spike for use in the backward pass
-            return
+#            spk = (v > 0).float() # Heaviside on the forward pass
+            spk = torch.gt(torch.sigmoid(1*v) , torch.rand(v.shape))
+            ctx.save_for_backward(v)  # store the spike for use in the backward pass
+            return spk
         @staticmethod
         def backward(ctx, grad_output):
             (spk,) = ctx.saved_tensors  # retrieve the spike
-            grad = grad_output * spk # scale the gradient by the spike: 1/0
+#            grad = grad_output * spk # scale the gradient by the spike: 1/0
+            grad = 0.3 * torch.clamp(1-torch.abs(spk), min=0.0)
             return grad
 
 def error_function(outputs, targets, masks):
@@ -171,7 +191,7 @@ def error_function(outputs, targets, masks):
 net_size = 100
 dt = .1
 tau = 1
-spk_param = 0.4, .1 ,0.3  # threshold, temperature, damp
+spk_param = 0.4, 10 ,0.3  # threshold, temperature, damp
 ###  input_dim, net_dim, output_dim, tau, dt, spk_param, init_std=1.
 my_net = RSNN(1, net_size, 1, tau, dt, spk_param, init_std=1.1)
 
