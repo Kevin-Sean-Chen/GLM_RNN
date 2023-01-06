@@ -225,7 +225,7 @@ def error_function(outputs, targets, masks):
 net_size = 100
 dt = .1
 tau = 1
-spk_param = 0.4, .1, 0.9  # threshold, temperature, damp
+spk_param = 0.4, 1, 0.3  # threshold, temperature, damp
 ###  input_dim, net_dim, output_dim, tau, dt, spk_param, init_std=1.
 my_net = RSNN(1, net_size, 1, tau, dt, spk_param, init_std=1.1)
 
@@ -271,8 +271,8 @@ for epoch in range(n_epochs):
 inputs_pos, _, _, _ = generate_trials(n_trials, coherences=[+1], T=T)
 inputs_neg, _, _, _ = generate_trials(n_trials, coherences=[-1], T=T)
 
-inputs_pos, _, _, _ = generate_trials2(n_trials, coherences=[.0], T=T)
-inputs_neg, _, _, _ = generate_trials2(n_trials, coherences=[1.], T=T)
+#inputs_pos, _, _, _ = generate_trials2(n_trials, coherences=[.0], T=T)
+#inputs_neg, _, _, _ = generate_trials2(n_trials, coherences=[1.], T=T)
 
 # run network
 v_pos, z_pos, output_pos = my_net.forward(inputs_pos*1)
@@ -342,9 +342,14 @@ def generate_trials2(n_trials, coherences=[0., 1.], T=T):
         
     return inputs, targets, mask, coh_trials
 
-inputs, targets, masks, coh_trials = generate_trials2(100,T=T)
+inputs, targets, masks, coh_trials = generate_trials(100,T=T)
+#inputs, targets, masks, coh_trials = generate_trials2(100,T=T)
 
-### ideas
+### ideas ###
+# trained network rank:
+# current observation is that the strength of J effects the learned rank
+# build up simulator to analyze low-rank or truncated networks
+# probablistic output:
 # probablistic output requires an objective function different from direct MSE reconstruction
 # (might still agree at large training set limit)
 # but if we use other summary statistics it might speed up the process (?)
