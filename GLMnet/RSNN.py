@@ -7,17 +7,16 @@ Created on Sun Jan  1 00:36:54 2023
 
 import numpy as np
 import matplotlib.pyplot as plt
+
 import torch
 import torch.nn as nn
-
-from torch.nn import init
-from torch.nn import functional as F
 
 import matplotlib     
 matplotlib.rc('xtick', labelsize=40) 
 matplotlib.rc('ytick', labelsize=40) 
 
 #torch.autograd.set_detect_anomaly(True)
+#%matplotlib qt5
 
 # %%
 class RSNN(nn.Module):# , torch.autograd.Function):
@@ -43,14 +42,18 @@ class RSNN(nn.Module):# , torch.autograd.Function):
         self.tau = tau
         thr, temp, damp = spk_param
         self.thr, self.temp, self.damp = thr, temp, damp  # spiking threshold, temperature, and dampled factor
-        self.spike_op = self.Spike(temp,damp).apply  # snn-torch spike-opteration class
+        global temp_
+        global damp_
+        temp_, damp_ = temp, damp  # for BPTT usage
+        self.spike_op = self.Spike.apply  # snn-torch spike-opteration class
+#        self.spike_op = Spike().apply  # if it is not a sub-class
         
         # Defining the parameters of the network
         self.J = nn.Parameter(torch.Tensor(net_dim, net_dim))     # connectivity matrix
 #        self.B = nn.Parameter(torch.Tensor(net_dim, input_dim))   # input weights
-#        self.W = nn.Parameter(torch.Tensor(output_dim, net_dim))  # output matrix
+        self.W = nn.Parameter(torch.Tensor(output_dim, net_dim))  # output matrix
         self.B = torch.Tensor(net_dim,input_dim)  # I/O without training constraint
-        self.W = torch.Tensor(output_dim, net_dim)
+#        self.W = torch.Tensor(output_dim, net_dim)
         
         # Initializing the parameters to some random values
         with torch.no_grad():  # this is to say that initialization will not be considered when computing the gradient later on
@@ -93,16 +96,30 @@ class RSNN(nn.Module):# , torch.autograd.Function):
         if initial_state is not None:
             vt[0] = initial_state
 #            zt[0] = self.spikefunction(vt[0])
-            zt[0] = self.spike_op(self.pre_spk(vt[0]))
+#            zt[0] = self.spike_op(self.spkNL(vt[0])*self.dt)  # Poisson
+            zt[0] = self.spike_op(self.pre_spk(vt[0]))  # Bernoulli
         output_seq = torch.zeros((n_trials, T, self.output_dim))  # output time series
         
         # loop through time
         for t in range(T):
-            vt[:,t+1] = (1 - self.dt/self.tau)*vt[:,t] + self.dt/self.tau*(self.pre_spk(zt[:,t]) @ self.J.T + inputs[:,t] @ self.B.T)
-#            zt[:,t+1] = self.spikefunction(vt[:,t+1])
-            zt[:,t+1] = self.spike_op(self.pre_spk(vt[:,t+1]))
-            output_seq[:,t] = self.pre_spk(vt[:,t+1]) @ self.W.T
-#            output_seq[:,t] = self.NL(vt[:,t+1]) @ self.W.T     
+            ### ODE form
+#            vt[:,t+1] = (1 - self.dt/self.tau)*vt[:,t] + self.dt/self.tau*(self.linear_map(zt[:,t]) @ self.J.T + inputs[:,t] @ self.B.T)
+##            zt[:,t+1] = self.spikefunction(vt[:,t+1])
+#            zt[:,t+1] = self.spike_op(self.pre_spk(vt[:,t+1]))
+#            output_seq[:,t] = self.pre_spk(vt[:,t+1]) @ self.W.T
+##            output_seq[:,t] = self.NL(vt[:,t+1]) @ self.W.T  
+            
+            ### GLM form
+            vt[:,t+1] = (1 - self.dt/self.tau)*vt[:,t] + self.dt/self.tau*zt[:,t]
+            
+            # Poisson
+#            lamb = self.spkNL(self.synNL(vt[:,t+1]) @ self.J.T + inputs[:,t] @ self.B.T)
+#            zt[:,t+1] = self.spike_op(self.linear_map(lamb)*self.dt)  
+            # Bernoulli
+            lamb = self.linear_map(self.synNL(vt[:,t+1]) @ self.J.T + inputs[:,t] @ self.B.T)
+            zt[:,t+1] = self.spike_op(self.pre_spk(lamb))
+            
+            output_seq[:,t] = lamb @ self.W.T
         
 #        self.save_for_backward(vt)  # test with this
         
@@ -125,8 +142,8 @@ class RSNN(nn.Module):# , torch.autograd.Function):
         """
         abs_u = torch.abs(v_scaled)
         return self.damp * torch.clamp(1-abs_u, min=0.0)
-
-    def NL(self, x):
+    
+    def synNL(self, x):
         """
         Synaptic nonliearity
         """
@@ -134,13 +151,29 @@ class RSNN(nn.Module):# , torch.autograd.Function):
         nl = torch.tanh(x)
         return nl
     
+    def spkNL(self, x):
+        """
+        Spiking nonliearity
+        """
+        nl = torch.clamp(x, min=0)
+#        nl = torch.sigmoid(x)
+        return nl
+    
+    def linear_map(self,x):
+        """
+        Passing the same vector but allow gradient computation
+        """
+        n = x.shape[0]
+        I = torch.eye(n)
+        return I @ x
+    
     def pre_spk(self, mem):
         """
         input raw memebrane mem and rescale, weight, and pass through NL
         this is a function used for the spiking class method
         """
         mem1 = (mem - self.thr)/self.thr
-        mem2 = self.NL(self.temp * mem1)
+        mem2 = mem1 #self.spkNL(self.temp * mem1)
         return mem2
     
     def spikefunction(self, vt):
@@ -158,23 +191,25 @@ class RSNN(nn.Module):# , torch.autograd.Function):
         with this subclass, directly use Function.apply for spiking process 
         and the gradient step follows
         """
-        def __init__(self, temp, damp):
-            super().__init__()
-            self.temp = temp
-            self.damp = damp
+#        def __init__(self, temp, damp):
+#            self.temp = temp
+#            self.damp = damp
         @staticmethod
         def forward(ctx, v):
 #            spk = (v > 0).float() # Heaviside on the forward pass
-            spk = torch.gt(torch.sigmoid(1*v) , torch.rand(v.shape))
+            spk = torch.gt(torch.sigmoid(temp_*v) , torch.rand(v.shape))
+#            spk = torch.poisson(temp_*v) #(torch.sigmoid(temp_*v))
             ctx.save_for_backward(v)  # store the spike for use in the backward pass
+#            self.save_for_backward(v)
             return spk
         @staticmethod
         def backward(ctx, grad_output):
             (spk,) = ctx.saved_tensors  # retrieve the spike
+#            (spk,) = self.saved_tensors
 #            grad = grad_output * spk # scale the gradient by the spike: 1/0
-            grad = 0.3 * torch.clamp(1-torch.abs(spk), min=0.0)
+            grad = damp_ * torch.clamp(1-torch.abs(spk), min=0.0)
             return grad
-
+        
 def error_function(outputs, targets, masks):
     """
     parameters:
@@ -186,12 +221,11 @@ def error_function(outputs, targets, masks):
     """
     return torch.sum(masks * (targets - outputs)**2) / outputs.shape[0]
 
-
 # %% test run
 net_size = 100
 dt = .1
 tau = 1
-spk_param = 0.4, 10 ,0.3  # threshold, temperature, damp
+spk_param = 0.4, .1, 0.9  # threshold, temperature, damp
 ###  input_dim, net_dim, output_dim, tau, dt, spk_param, init_std=1.
 my_net = RSNN(1, net_size, 1, tau, dt, spk_param, init_std=1.1)
 
@@ -234,12 +268,15 @@ for epoch in range(n_epochs):
     output.detach_()
 
 # %%
-inputs_pos, _, _, _ = generate_trials(100, coherences=[+1], T=T)
-inputs_neg, _, _, _ = generate_trials(100, coherences=[-1], T=T)
+inputs_pos, _, _, _ = generate_trials(n_trials, coherences=[+1], T=T)
+inputs_neg, _, _, _ = generate_trials(n_trials, coherences=[-1], T=T)
+
+inputs_pos, _, _, _ = generate_trials2(n_trials, coherences=[.0], T=T)
+inputs_neg, _, _, _ = generate_trials2(n_trials, coherences=[1.], T=T)
 
 # run network
 v_pos, z_pos, output_pos = my_net.forward(inputs_pos*1)
-v_neg, z_neg, output_neg = my_net.forward(inputs_neg)
+v_neg, z_neg, output_neg = my_net.forward(inputs_neg*1)
 
 # convert all tensors to numpy
 v_pos = v_pos.detach().numpy().squeeze()
@@ -285,4 +322,24 @@ def generate_trials(n_trials, coherences=[-2, -1, 1, 2], std=3., T=100):
         
     return inputs, targets, mask, coh_trials
 
-inputs, targets, masks, coh_trials = generate_trials(100,T=T)
+def generate_trials2(n_trials, coherences=[0., 1.], T=T):
+    """
+    Generate deterministic input but stochastic output
+    """
+    inputs = torch.zeros((n_trials, T, 1))
+    targets = torch.ones((n_trials, T, 1))
+    mask = torch.zeros((n_trials, T, 1))
+    coh_trials = []
+    mask[:, T-1] = 1  # set mask to one only at the end
+    
+    for i in range(n_trials):
+        coh = random.choice(coherences)
+        inputs[i] += coh
+        if coh > np.random.rand():
+            targets[i] = -1#torch.rand(200,1)
+        coh_trials.append(coh)
+        
+        
+    return inputs, targets, mask, coh_trials
+
+inputs, targets, masks, coh_trials = generate_trials2(100,T=T)
