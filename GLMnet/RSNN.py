@@ -343,3 +343,9 @@ def generate_trials2(n_trials, coherences=[0., 1.], T=T):
     return inputs, targets, mask, coh_trials
 
 inputs, targets, masks, coh_trials = generate_trials2(100,T=T)
+
+### ideas
+# probablistic output requires an objective function different from direct MSE reconstruction
+# (might still agree at large training set limit)
+# but if we use other summary statistics it might speed up the process (?)
+# this can then be compared to semi-hand-tunned method with probablistic latent
