@@ -25,7 +25,7 @@ matplotlib.rc('ytick', labelsize=30)
 ###
 # %% network and time length settings
 N = 10
-T = 1000
+T = 100
 dt = 0.1
 time = np.arange(0,T,dt)
 lt = len(time)
@@ -45,14 +45,16 @@ plt.figure()
 plt.plot(time,latent)
 
 # %% spiking process
-M = np.random.randn(N)*.5  # N by latent D
+M = np.random.randn(N)*1.5  # N by latent D
 b = 3  # offiset for LDS
-J = np.random.randn(N,N)*10.
+J = np.random.randn(N,N)*30.
 randM = np.random.randn(N,N)
 rank = 2
 UU,SS,VV = np.linalg.svd(randM)
 v1, v2 = UU[:,:rank], VV[:rank,:]
-J = (v1 @ v1.T + v2.T @ v2)*30 + J*0 + 0*v1@v2
+v1, v2 = np.random.randn(N), np.random.randn(N)
+J = (v1 @ v1.T + v2.T @ v2)*1 + J*0 + 0*v1@v2
+np.fill_diagonal(J, -2*np.ones(N))
 
 spk = np.zeros((N,lt))  # spike train
 rt = spk*1  # spike rate
@@ -72,18 +74,29 @@ def phi(x):
     Synaptic nonlinearity
     """
 #    ph = lamb_max/(1+np.exp(-x)) + lamb_min
-    ph = np.tanh(x)
-#    ph = x
+    # ph = np.tanh(x)
+    ph = x
     return ph
+
+def spiking(nl):
+    """
+    Stochastic spiking process
+    """
+    ### Poisson spikes
+    # spk = np.random.poisson(nl)
+    
+    ### Bernoulli spikes
+    spk = np.random.binomial(1, nl)
+    return spk
     
 
 for tt in range(lt-1):
-    spk[:,tt] = np.random.poisson(NL(M*latent[tt]-b))
-#    spk[:,tt] = np.random.poisson(NL(J @ phi(rt[:,tt]) + 0)*dt)  # matched model control
+    # spk[:,tt] = np.random.poisson(NL(M*latent[tt]-b))
+    spk[:,tt] = spiking(NL(J @ phi(rt[:,tt]) + 0)*dt)  # matched model control
     rt[:,tt+1] = rt[:,tt] + dt/tau_r*(-rt[:,tt] + spk[:,tt])
 
 plt.figure()
-plt.imshow(rt,aspect='auto')#,cmap='gray')
+plt.imshow(spk,aspect='auto')#,cmap='gray')
 
 # %% inference
 def negLL(ww, spk, rt, dt, f=np.exp, lamb=0):
@@ -114,11 +127,11 @@ Wrec = w_map[N:].reshape(N,N)*1.
 spk_rec = np.zeros((N,lt))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
-    spk_rec[:,tt] = np.random.poisson(NL(Wrec @ phi(rt_rec[:,tt]) + brec)*dt)
+    spk_rec[:,tt] = spiking(NL(Wrec @ phi(rt_rec[:,tt]) + brec)*dt)
     rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau_r*(-rt_rec[:,tt] + spk_rec[:,tt]) 
 
 plt.figure()
-plt.imshow(rt_rec,aspect='auto')
+plt.imshow(spk_rec,aspect='auto')
 
 # %% rank analysis
 c_rt = np.cov(rt)
