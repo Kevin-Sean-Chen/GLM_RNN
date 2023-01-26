@@ -51,9 +51,10 @@ class RSNN(nn.Module):# , torch.autograd.Function):
         # Defining the parameters of the network
         self.J = nn.Parameter(torch.Tensor(net_dim, net_dim))     # connectivity matrix
 #        self.B = nn.Parameter(torch.Tensor(net_dim, input_dim))   # input weights
-        self.W = nn.Parameter(torch.Tensor(output_dim, net_dim))  # output matrix
+#        self.W = nn.Parameter(torch.Tensor(output_dim, net_dim))  # output matrix
         self.B = torch.Tensor(net_dim,input_dim)  # I/O without training constraint
-#        self.W = torch.Tensor(output_dim, net_dim)
+        self.W = torch.Tensor(output_dim, net_dim)
+#        self.W = torch.ones(output_dim, net_dim)
         
         # Initializing the parameters to some random values
         with torch.no_grad():  # this is to say that initialization will not be considered when computing the gradient later on
@@ -227,7 +228,7 @@ dt = .1
 tau = 1
 spk_param = 0.4, 1, 0.3  # threshold, temperature, damp
 ###  input_dim, net_dim, output_dim, tau, dt, spk_param, init_std=1.
-my_net = RSNN(1, net_size, 1, tau, dt, spk_param, init_std=1.1)
+my_net = RSNN(1, net_size, 1, tau, dt, spk_param, init_std=.1)
 
 # %% set simulation
 # Let us run it with some constant input for a duration T=200 steps:
@@ -266,6 +267,13 @@ for epoch in range(n_epochs):
     print(f'Epoch {epoch}, loss={loss:.3f}')
     loss.detach_()  # 2 lines for pytorch administration
     output.detach_()
+
+# %% test truncation
+#rr = 3
+#Jij = my_net.J.detach().numpy()
+#uu,ss,vv = np.linalg.svd(Jij)
+#Jhat = (uu[:,:rr] * ss[:rr]) @ vv[:rr,:]
+#my_net.J = weight = nn.Parameter(torch.Tensor(Jhat))
 
 # %%
 inputs_pos, _, _, _ = generate_trials(n_trials, coherences=[+1], T=T)
@@ -347,7 +355,7 @@ inputs, targets, masks, coh_trials = generate_trials(100,T=T)
 
 ### ideas ###
 # trained network rank:
-# current observation is that the strength of J effects the learned rank
+# current observation is that the strength of J effects the learned rank (but maybe not for rate RNN!??)
 # build up simulator to analyze low-rank or truncated networks
 # probablistic output:
 # probablistic output requires an objective function different from direct MSE reconstruction

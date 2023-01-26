@@ -41,11 +41,14 @@ latent = np.zeros(lt)
 for tt in range(lt-1):
     latent[tt+1] = latent[tt] + dt/tau_l*(vf(latent[tt])) + np.sqrt(dt*sig)*np.random.randn()
 
+latent = np.sin(time/20)
+
 plt.figure()
 plt.plot(time,latent)
 
 # %% spiking process
 M = np.random.randn(N)*.5  # N by latent D
+M = np.ones(N)*1.5
 b = 3  # offiset for LDS
 J = np.random.randn(N,N)*10.
 randM = np.random.randn(N,N)
@@ -72,8 +75,8 @@ def phi(x):
     Synaptic nonlinearity
     """
 #    ph = lamb_max/(1+np.exp(-x)) + lamb_min
-    ph = np.tanh(x)
-#    ph = x
+#    ph = np.tanh(x)
+    ph = x
     return ph
     
 
