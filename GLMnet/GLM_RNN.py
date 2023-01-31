@@ -9,6 +9,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import scipy as sp
 from scipy.optimize import minimize
+from scipy.special import gamma, factorial
 
 import matplotlib 
 matplotlib.rc('xtick', labelsize=30) 
@@ -41,26 +42,28 @@ latent = np.zeros(lt)
 for tt in range(lt-1):
     latent[tt+1] = latent[tt] + dt/tau_l*(vf(latent[tt])) + np.sqrt(dt*sig)*np.random.randn()
 
-latent = np.sin(time/20)
+latent = 5*np.sin(time/2)
 
 plt.figure()
 plt.plot(time,latent)
 
 # %% spiking process
-M = np.random.randn(N)*.5  # N by latent D
-M = np.ones(N)*1.5
-b = 3  # offiset for LDS
-J = np.random.randn(N,N)*10.
+M = np.random.randn(N)*1.5  # N by latent D
+M = np.ones(N)
+b = 0  # offiset for LDS
+J = np.random.randn(N,N)*20.
 randM = np.random.randn(N,N)
 rank = 2
 UU,SS,VV = np.linalg.svd(randM)
 v1, v2 = UU[:,:rank], VV[:rank,:]
-J = (v1 @ v1.T + v2.T @ v2)*30 + J*0 + 0*v1@v2
+v1, v2 = np.random.randn(N), np.random.randn(N)
+#J = (v1 @ v1.T + v2.T @ v2)*1 + J*0 + 0*v1@v2
+#np.fill_diagonal(J, -2*np.ones(N))
 
 spk = np.zeros((N,lt))  # spike train
 rt = spk*1  # spike rate
 tau_r = np.random.rand(N)*5
-lamb_max, lamb_min = 1, 0
+lamb_max, lamb_min = 10, 0
 def NL(x):
     """
     Spiking nonlinearity
@@ -78,30 +81,51 @@ def phi(x):
 #    ph = np.tanh(x)
     ph = x
     return ph
+
+def spiking(nl):
+    """
+    Stochastic spiking process
+    """
+    ### Poisson spikes
+    spk = np.random.poisson(nl)
+    
+    ### Bernoulli spikes
+#    spk = np.random.binomial(1, nl)
+    
+    ### neg-binomial
+#    rnb = 0.1
+#    spk = np.random.negative_binomial(nl+rnb,rnb)
+    return spk
     
 
 for tt in range(lt-1):
-    spk[:,tt] = np.random.poisson(NL(M*latent[tt]-b))
-#    spk[:,tt] = np.random.poisson(NL(J @ phi(rt[:,tt]) + 0)*dt)  # matched model control
-    rt[:,tt+1] = rt[:,tt] + dt/tau_r*(-rt[:,tt] + spk[:,tt])
+     spk[:,tt] = spiking(NL(M*latent[tt]-b))
+#     spk[:,tt] = spiking(NL(J @ phi(rt[:,tt]) + 0)*dt)  # matched model control
+     rt[:,tt+1] = rt[:,tt] + dt/tau_r*(-rt[:,tt] + spk[:,tt])
 
 plt.figure()
-plt.imshow(rt,aspect='auto')#,cmap='gray')
+plt.imshow(spk,aspect='auto')#,cmap='gray')
 
 # %% inference
 def negLL(ww, spk, rt, dt, f=np.exp, lamb=0):
     N = spk.shape[0]
     b = ww[:N]
     W = ww[N:].reshape(N,N)
-    # evaluate log likelihood and gradient
+    # poisson log likelihood
     ll = np.sum(spk * np.log(f(W @ phi(rt) + b[:,None])) - f(W @ phi(rt) + b[:,None])*dt) \
-            - lamb*np.linalg.norm(W)
-#            - lamb*(W.T @ W).sum()
+            - lamb*np.linalg.norm(W) \
+            - lamb*(W.T @ W).sum()
+    
+    # neg-binomial log-likelihood
+#    rnb = 0.1
+#    lamb = f(W @ phi(rt) + b[:,None]) + 10**-10
+#    ll = np.sum( np.log(gamma(spk+rnb)) - np.log(factorial(spk)) - np.log(gamma(rnb)) \
+#                + spk*(np.log(lamb)-np.log(lamb+rnb)) + rnb*(np.log(rnb)-np.log(rnb+lamb)) )
     return -ll
 
 dd = N*N+N
 w_init = np.zeros([dd,])  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, spk,rt,dt,NL, 10.),w_init,method='L-BFGS-B',tol=1e-5)
+res = sp.optimize.minimize(lambda w: negLL(w, spk,rt,dt,NL, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_map = res.x
 print(res.fun)
 print(res.success)
@@ -111,17 +135,40 @@ print(res.success)
 ### then try bilinear temporal filter
 ### then add in self-history inhibition
 
-# %%
+# %% test with low-rank W inference and 'known' latent
+def negLL_lr(ww, spk, rt, latent, dt, f=np.exp, lamb=0):
+    N = spk.shape[0]
+    Mv = ww[:N]
+    Nv = ww[N:]
+    latent_loss = -np.sum((latent - Nv@phi(rt))**2)*.5
+    spk_loss = np.sum(spk * np.log(f(Mv[:,None] * phi(rt))) - f(Mv[:,None] * phi(rt))*dt)
+    ll = latent_loss + spk_loss
+    return -ll
+
+dd = N+N
+w_init = np.zeros([dd,])  #Wij.reshape(-1)#
+res = sp.optimize.minimize(lambda w: negLL_lr(w, spk,rt,latent,dt,NL, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
+w_lr = res.x
+print(res.fun)
+print(res.success)
+
+# %% unwrap W matrix full-map
 brec = w_map[:N]
 Wrec = w_map[N:].reshape(N,N)*1.
+
+# low-rank constrained
+mv, nv= w_lr[:N], w_lr[N:]
+Wrec = np.outer(mv,nv)
+brec = 0
+# %%
 spk_rec = np.zeros((N,lt))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
-    spk_rec[:,tt] = np.random.poisson(NL(Wrec @ phi(rt_rec[:,tt]) + brec)*dt)
+    spk_rec[:,tt] = spiking(NL(Wrec @ phi(rt_rec[:,tt]) + brec)*dt)
     rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau_r*(-rt_rec[:,tt] + spk_rec[:,tt]) 
 
 plt.figure()
-plt.imshow(rt_rec,aspect='auto')
+plt.imshow(spk_rec,aspect='auto')
 
 # %% rank analysis
 c_rt = np.cov(rt)
