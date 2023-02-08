@@ -25,13 +25,13 @@ matplotlib.rc('ytick', labelsize=30)
 #               test with perturbation (out-of-equilibrium behavior)
 ###
 # %% network and time length settings
-N = 10
-T = 100
+N = 20
+T = 200
 dt = 0.1
 time = np.arange(0,T,dt)
 lt = len(time)
 sig = .5
-tau_l = 5
+tau_l = 2
 
 # %% latent dynamics
 # potential: V(x) = 1/4*x**4 - x**2 - c*x
@@ -42,14 +42,14 @@ latent = np.zeros(lt)
 for tt in range(lt-1):
     latent[tt+1] = latent[tt] + dt/tau_l*(vf(latent[tt])) + np.sqrt(dt*sig)*np.random.randn()
 
-latent = 5*np.sin(time/2)
+latent = 2*np.sin(time/6)
 
 plt.figure()
 plt.plot(time,latent)
 
 # %% spiking process
-M = np.random.randn(N)*1.5  # N by latent D
-M = np.ones(N)
+M = np.random.randn(N)*1.  # N by latent D
+#M = np.ones(N)
 b = 0  # offiset for LDS
 J = np.random.randn(N,N)*20.
 randM = np.random.randn(N,N)
@@ -63,14 +63,14 @@ v1, v2 = np.random.randn(N), np.random.randn(N)
 spk = np.zeros((N,lt))  # spike train
 rt = spk*1  # spike rate
 tau_r = np.random.rand(N)*5
-lamb_max, lamb_min = 10, 0
+lamb_max, lamb_min = 2, 0
 def NL(x):
     """
     Spiking nonlinearity
     """
 #    nl = x * (x > 0)
-    nl = (lamb_max-lamb_min)/(1+np.exp(-x)) + lamb_min
-#    nl = np.log(1+np.exp(x))
+#    nl = (lamb_max-lamb_min)/(1+np.exp(-x)) + lamb_min
+    nl = np.log(1+np.exp(x))
 #    nl = np.exp(x)
     return nl
 def phi(x):
@@ -111,6 +111,7 @@ def negLL(ww, spk, rt, dt, f=np.exp, lamb=0):
     N = spk.shape[0]
     b = ww[:N]
     W = ww[N:].reshape(N,N)
+#    W = ww.reshape(N,N)
     # poisson log likelihood
     ll = np.sum(spk * np.log(f(W @ phi(rt) + b[:,None])) - f(W @ phi(rt) + b[:,None])*dt) \
             - lamb*np.linalg.norm(W) \
@@ -138,37 +139,45 @@ print(res.success)
 # %% test with low-rank W inference and 'known' latent
 def negLL_lr(ww, spk, rt, latent, dt, f=np.exp, lamb=0):
     N = spk.shape[0]
-    Mv = ww[:N]
-    Nv = ww[N:]
+    b = ww[:N]
+    Mv = ww[N:2*N]
+    Nv = ww[2*N:]
     latent_loss = -np.sum((latent - Nv@phi(rt))**2)*.5
-    spk_loss = np.sum(spk * np.log(f(Mv[:,None] * phi(rt))) - f(Mv[:,None] * phi(rt))*dt)
+    spk_loss = np.sum(spk * np.log(f(Mv[:,None] * phi(rt) + b[:,None])) - f(Mv[:,None] * phi(rt) + b[:,None])*dt)
+#    spk_loss = np.sum(spk * np.log(f(Mv[:,None] * latent[None,:])) - f(Mv[:,None] * latent[None,:])*dt)
     ll = latent_loss + spk_loss
     return -ll
 
-dd = N+N
+dd = N+N+N
 w_init = np.zeros([dd,])  #Wij.reshape(-1)#
 res = sp.optimize.minimize(lambda w: negLL_lr(w, spk,rt,latent,dt,NL, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_lr = res.x
 print(res.fun)
 print(res.success)
 
+###
+# this would not work... needs to be included iteratively
+###
+
 # %% unwrap W matrix full-map
 brec = w_map[:N]
 Wrec = w_map[N:].reshape(N,N)*1.
 
 # low-rank constrained
-mv, nv= w_lr[:N], w_lr[N:]
-Wrec = np.outer(mv,nv)
-brec = 0
+#brec = w_lr[:N]
+#mv, nv= w_lr[N:2*N], w_lr[2*N:]
+#Wrec = np.outer(mv,nv)
+#brec = 0
+
 # %%
 spk_rec = np.zeros((N,lt))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
-    spk_rec[:,tt] = spiking(NL(Wrec @ phi(rt_rec[:,tt]) + brec)*dt)
+    spk_rec[:,tt] = spiking(NL(Wrec @ phi(rt_rec[:,tt]) + brec*1)*dt)
     rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau_r*(-rt_rec[:,tt] + spk_rec[:,tt]) 
 
 plt.figure()
-plt.imshow(spk_rec,aspect='auto')
+plt.imshow(rt_rec,aspect='auto')
 
 # %% rank analysis
 c_rt = np.cov(rt)
