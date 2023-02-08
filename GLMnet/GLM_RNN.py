@@ -25,32 +25,40 @@ matplotlib.rc('ytick', labelsize=30)
 #               test with perturbation (out-of-equilibrium behavior)
 ###
 # %% network and time length settings
-N = 20
-T = 200
+N = 20  # neurons
+T = 200  # time
 dt = 0.1
 time = np.arange(0,T,dt)
 lt = len(time)
-sig = .5
-tau_l = 2
 
 # %% latent dynamics
 # potential: V(x) = 1/4*x**4 - x**2 - c*x
-c = 0.
+c = 0.  # posision
+sig = .5  # noise
+tau_l = 2  # time scale
 def vf(x):
+    """
+    Derivitive of focring in a double-well
+    """
     return -(x**3 - 2*x - c)
 latent = np.zeros(lt)
 for tt in range(lt-1):
+    ### simpe SDE
     latent[tt+1] = latent[tt] + dt/tau_l*(vf(latent[tt])) + np.sqrt(dt*sig)*np.random.randn()
 
-latent = 2*np.sin(time/6)
+### simply periodic
+#latent = 2*np.sin(time/6)
 
 plt.figure()
 plt.plot(time,latent)
 
 # %% spiking process
+# loading for latent
 M = np.random.randn(N)*1.  # N by latent D
 #M = np.ones(N)
 b = 0  # offiset for LDS
+
+# used for ground-truth network parameters
 J = np.random.randn(N,N)*20.
 randM = np.random.randn(N,N)
 rank = 2
@@ -60,10 +68,9 @@ v1, v2 = np.random.randn(N), np.random.randn(N)
 #J = (v1 @ v1.T + v2.T @ v2)*1 + J*0 + 0*v1@v2
 #np.fill_diagonal(J, -2*np.ones(N))
 
-spk = np.zeros((N,lt))  # spike train
-rt = spk*1  # spike rate
-tau_r = np.random.rand(N)*5
+# nonlinear function parameters
 lamb_max, lamb_min = 2, 0
+
 def NL(x):
     """
     Spiking nonlinearity
@@ -96,10 +103,15 @@ def spiking(nl):
 #    rnb = 0.1
 #    spk = np.random.negative_binomial(nl+rnb,rnb)
     return spk
-    
+
+
+# simulate spikes    
+spk = np.zeros((N,lt))  # spike train
+rt = spk*1  # spike rate
+tau_r = np.random.rand(N)*5
 
 for tt in range(lt-1):
-     spk[:,tt] = spiking(NL(M*latent[tt]-b))
+     spk[:,tt] = spiking(NL(M*latent[tt]-b))  # latent-driven spikes
 #     spk[:,tt] = spiking(NL(J @ phi(rt[:,tt]) + 0)*dt)  # matched model control
      rt[:,tt+1] = rt[:,tt] + dt/tau_r*(-rt[:,tt] + spk[:,tt])
 
@@ -169,7 +181,7 @@ Wrec = w_map[N:].reshape(N,N)*1.
 #Wrec = np.outer(mv,nv)
 #brec = 0
 
-# %%
+# %% simulated given inferred parameters
 spk_rec = np.zeros((N,lt))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
