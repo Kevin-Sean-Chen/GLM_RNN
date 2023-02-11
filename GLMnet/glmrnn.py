@@ -6,19 +6,12 @@ Created on Fri Feb 10 13:58:59 2023
 @author: kschen
 """
 import numpy as np
-<<<<<<< HEAD
 from matplotlib import pyplot as plt
-=======
->>>>>>> 99e0907384afc28dc580c3930614491352855718
 # import glm_neuron as nonlinearity, kernel, spiking
 import torch
 import torch.nn as nn
 
-<<<<<<< HEAD
 class GLMRNN(nn.Module):
-=======
-class GLMRNN(object):
->>>>>>> 99e0907384afc28dc580c3930614491352855718
     
     def __init__(self,N, T, dt, k, kernel='basis', nl_type='exp', spk_type="bernoulli"):
 
@@ -45,7 +38,6 @@ class GLMRNN(object):
         """
         Forward process of the GLM-RNN model
         """
-<<<<<<< HEAD
         xtt = torch.ones(self.N) #torch.zeros(self.N, self.T)  # voltage
         gtt = torch.ones(self.N) #torch.zeros(self.N, self.T)  # rate
         stt = torch.ones(self.N) #torch.zeros(self.N, self.T)  # spikes
@@ -70,17 +62,6 @@ class GLMRNN(object):
 #        st_new = self.spiking(gt_new*self.dt)  # spiking process
         return xt_new, gt_new, st_new
     
-=======
-        xt = torch.zeros(self.N, self.T)  # voltage
-        st = torch.zeros(self.N, self.T)  # spikes
-        gt = torch.zeros(self.N, self.T)  # rate
-        for t in range(self.T-1):
-            xt[:,t+1] = (1 - self.dt/self.tau)*xt[:,t] + st[:,t]  # synaptic activity
-            gt[:,t+1] = self.W @ xt[:,t+1] + self.B  # firing rate
-            st[:,t+1] = self.spiking(self.nonlinearity(gt[:,t+1]*self.dt))  # spiking process
-        return st, gt, xt
-    
->>>>>>> 99e0907384afc28dc580c3930614491352855718
     
     def generate_target(self, spk_type=None, latent=None, W_true=None):
         """
@@ -150,7 +131,6 @@ class GLMRNN(object):
             spk = nb_dist.sample()
         return spk
     
-<<<<<<< HEAD
     def ll_loss(self, model_lamb, target_spk):
         """
         log-likelihood loss function
@@ -166,25 +146,12 @@ def mse_loss(outputs, targets, masks):
     """
     return torch.sum(masks * (targets - outputs)**2) / outputs.shape[0]
 
-=======
-def loss_function(outputs, targets, masks):
-    """
-    parameters:
-    outputs: torch tensor of shape (n_trials x duration x output_dim)
-    targets: torch tensor of shape (n_trials x duration x output_dim)
-    mask: torch tensor of shape (n_trials x duration x output_dim)
-    
-    returns: float
-    """
-    return torch.sum(masks * (targets - outputs)**2) / outputs.shape[0]
->>>>>>> 99e0907384afc28dc580c3930614491352855718
 # %% testing
 N = 20
 T = 1000
 dt = 0.1
 k = 10
 my_glmrnn = GLMRNN(N, T, dt, k)
-<<<<<<< HEAD
 st, gt, xt = my_glmrnn.forward()
 
 # %% training algorithm
@@ -204,10 +171,5 @@ for epoch in range(n_epochs):
     
     losses.append(loss.item())
     print(f'Epoch {epoch}, loss={loss:.3f}')
-    loss.detach_()  # 2 lines for pytorch administration
+    loss.detach_()  # 2lines for pytorch administration
 #    st.detach_()
-=======
-
-# %%
-st, gt, xt = my_glmrnn.forward()
->>>>>>> 99e0907384afc28dc580c3930614491352855718
