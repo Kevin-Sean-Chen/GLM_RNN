@@ -6,11 +6,12 @@ Created on Fri Feb 10 13:58:59 2023
 @author: kschen
 """
 import numpy as np
+from matplotlib import pyplot as plt
 # import glm_neuron as nonlinearity, kernel, spiking
 import torch
 import torch.nn as nn
 
-class GLMRNN(object):
+class GLMRNN(nn.Module):
     
     def __init__(self,N, T, dt, k, kernel='basis', nl_type='exp', spk_type="bernoulli"):
 
@@ -37,14 +38,29 @@ class GLMRNN(object):
         """
         Forward process of the GLM-RNN model
         """
-        xt = torch.zeros(self.N, self.T)  # voltage
-        st = torch.zeros(self.N, self.T)  # spikes
-        gt = torch.zeros(self.N, self.T)  # rate
+        xtt = torch.ones(self.N) #torch.zeros(self.N, self.T)  # voltage
+        gtt = torch.ones(self.N) #torch.zeros(self.N, self.T)  # rate
+        stt = torch.ones(self.N) #torch.zeros(self.N, self.T)  # spikes
+        xt,gt,st = [xtt], [gtt], [stt]
         for t in range(self.T-1):
-            xt[:,t+1] = (1 - self.dt/self.tau)*xt[:,t] + st[:,t]  # synaptic activity
-            gt[:,t+1] = self.W @ xt[:,t+1] + self.B  # firing rate
-            st[:,t+1] = self.spiking(self.nonlinearity(gt[:,t+1]*self.dt))  # spiking process
+            xtt,gtt,stt = self.recurrence(xtt,gtt,stt)
+            xt.append(xtt)  # append to list
+            gt.append(gtt)
+            st.append(stt)
+        xt = torch.stack(xt, dim=0).T  # make to torch tensor
+        st = torch.stack(st, dim=0).T
+        gt = torch.stack(gt, dim=0).T
         return st, gt, xt
+    
+    def recurrence(self, xt,gt,st):
+        xt_new = (1 - self.dt/self.tau)*xt + st  # synaptic acticity
+        gt_new = self.nonlinearity(self.W @ xt + self.B)  # nonlinear rate
+        try:
+            st_new = self.spiking(gt_new*self.dt)  # spiking process
+        except:
+            print(self.B)
+#        st_new = self.spiking(gt_new*self.dt)  # spiking process
+        return xt_new, gt_new, st_new
     
     
     def generate_target(self, spk_type=None, latent=None, W_true=None):
@@ -115,22 +131,45 @@ class GLMRNN(object):
             spk = nb_dist.sample()
         return spk
     
-def loss_function(outputs, targets, masks):
+    def ll_loss(self, model_lamb, target_spk):
+        """
+        log-likelihood loss function
+        """
+        ll = torch.sum(target_spk * torch.log(self.nonlinearity(model_lamb)) - self.nonlinearity(model_lamb)*self.dt)
+        return -ll
+
+
+### for MSE output loss
+def mse_loss(outputs, targets, masks):
     """
-    parameters:
-    outputs: torch tensor of shape (n_trials x duration x output_dim)
-    targets: torch tensor of shape (n_trials x duration x output_dim)
-    mask: torch tensor of shape (n_trials x duration x output_dim)
-    
-    returns: float
+    MSE loss function of the full target spiking pattern
     """
     return torch.sum(masks * (targets - outputs)**2) / outputs.shape[0]
+
 # %% testing
 N = 20
 T = 1000
 dt = 0.1
 k = 10
 my_glmrnn = GLMRNN(N, T, dt, k)
-
-# %%
 st, gt, xt = my_glmrnn.forward()
+
+# %% training algorithm
+n_epochs = 100
+lr = 1e-3
+batch_size = 32
+optimizer = torch.optim.Adam(my_glmrnn.parameters(), lr=lr)  # fancy gradient descent algorithm
+losses = []
+
+for epoch in range(n_epochs):
+    spk_targ = my_glmrnn.generate_target()  # target spike patterns
+    st, gt, xt = my_glmrnn.forward()  # genertive model
+    optimizer.zero_grad()
+    loss = my_glmrnn.ll_loss(st, spk_targ)
+    loss.backward()  # with this function, pytorch computes the gradient of the loss with respect to all the parameters
+    optimizer.step()  # here it applies a step of gradient descent
+    
+    losses.append(loss.item())
+    print(f'Epoch {epoch}, loss={loss:.3f}')
+    loss.detach_()  # 2 lines for pytorch administration
+#    st.detach_()
