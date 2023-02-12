@@ -114,7 +114,7 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
 
 dd = N*N+N+N
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
+res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 10.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_map = res.x
 print(res.fun)
 print(res.success)
@@ -130,9 +130,10 @@ for tt in range(lt-1):
 plt.figure()
 plt.imshow(spk_rec,aspect='auto')
 
-### higher-levle
+### higher-levle:
 # fit GLM-RNN with ssm output
 # should work, but can be impove with latent information
 # maybe find a way to do join inference together
+# ... capture proabalistic behavior (not driven by input noise!), if possible!
 
 # %% 
