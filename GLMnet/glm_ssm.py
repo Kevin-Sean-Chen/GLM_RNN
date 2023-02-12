@@ -36,7 +36,7 @@ plt.figure()
 plt.subplot(211)
 plt.plot(state_true)
 plt.subplot(212)
-plt.imshow(spk_true, aspect='auto')
+plt.imshow(spk_true.T, aspect='auto')
 
 # %% GLM inference here
 def negLL(ww, spk, rt, dt, f=np.exp, lamb=0):
