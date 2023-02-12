@@ -28,7 +28,8 @@ hmm = ssm.HMM(num_states, obs_dim, input_dim,
 
 # %% sample targets
 T = 1000
-samples = hmm.sample(T=T)
+ipt = np.sin(np.arange(0,T)/30)[:,None]
+samples = hmm.sample(T=T, input=ipt)
 state_true = samples[0]
 spk_true = samples[1].T
 
@@ -45,6 +46,7 @@ dt = 0.1  # time step
 lk = 20  # kernel length
 tau = np.random.rand(N)*5+dt
 #tau = 2
+U = np.random.randn(N)*.1 #input vector
 
 ### process for rate vectors
 rt_true = np.zeros((N,lt))
@@ -73,8 +75,9 @@ def unpack(ww):
 #    b = ww[1:N+1]
 #    W = ww[N+1:].reshape(N,N)
     b = ww[:N]
-    W = ww[N:].reshape(N,N)
-    return b, W
+    u = ww[N:2*N]
+    W = ww[2*N:].reshape(N,N)
+    return b, W, u
 
 def lr_unpack(ww):
     b = ww[:N]
@@ -86,7 +89,7 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
     """
     Negative log-likelihood
     """
-    b,W = unpack(ww)
+    b,W,U = unpack(ww)
 #    N = spk.shape[0]
 #    lt = spk.shape[1]
 #    b,W = lr_unpack(ww)
@@ -102,13 +105,14 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
 #         rt[:,tt+1] = rt[:,tt] + dt/tau*(-rt[:,tt] + spk[:,tt])
     
     ### Poisson log-likelihood
-    ll = np.sum(spk * np.log(f(W @ rt + b[:,None])) - f(W @ rt + b[:,None])*dt) \
+    ll = np.sum(spk * np.log(f(W @ rt + b[:,None] + U[:,None]*ipt.T)) \
+                - f(W @ rt + b[:,None] + U[:,None]*ipt.T)*dt) \
             - lamb*np.linalg.norm(W) #\
 #            - lamb*np.sum(f(W @ rt + b[:,None])[:,:-1]*dt-rt_true[:,1:])**2
             ### add catigorical loss function here, for discrete firing patterns.
     return -ll
 
-dd = N*N+N+0
+dd = N*N+N+N
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
 res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_map = res.x
@@ -116,11 +120,11 @@ print(res.fun)
 print(res.success)
 
 # %% unwrap W matrix full-map
-b_rec, W_rec = unpack(w_map)
+b_rec, W_rec,U_rec = unpack(w_map)
 spk_rec = np.zeros((N,lt))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
-    spk_rec[:,tt] = spiking(NL(W_rec @ (rt_rec[:,tt]) + b_rec*1)*dt)
+    spk_rec[:,tt] = spiking(NL(W_rec @ (rt_rec[:,tt]) + b_rec*1 + U_rec*ipt[tt])*dt)
     rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau*(-rt_rec[:,tt] + spk_rec[:,tt]) 
 
 plt.figure()
