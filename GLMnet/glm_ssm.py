@@ -30,54 +30,90 @@ hmm = ssm.HMM(num_states, obs_dim, input_dim,
 T = 1000
 samples = hmm.sample(T=T)
 state_true = samples[0]
-spk_true = samples[1]
+spk_true = samples[1].T
 
 plt.figure()
 plt.subplot(211)
 plt.plot(state_true)
 plt.subplot(212)
-plt.imshow(spk_true.T, aspect='auto')
+plt.imshow(spk_true, aspect='auto')
 
-# %% GLM inference here
-def negLL(ww, spk, rt, dt, f=np.exp, lamb=0):
-    N = spk.shape[0]
+# %% tranistion to GLM network
+N = obs_dim*1  # neurons
+lt = T*1  # time
+dt = 0.1  # time step
+lk = 20  # kernel length
+tau = np.random.rand(N)*10
+
+### process for rate vectors
+rt_true = np.zeros((N,lt))
+for tt in range(lt-1):
+     rt_true[:,tt+1] = rt_true[:,tt] + dt/tau*(-rt_true[:,tt] + spk_true[:,tt])
+
+# %%
+def NL(x):
+#    nl = np.exp(x)
+    nl = np.log(1+np.exp(x))
+    return nl
+
+def spiking(x):
+    spk = np.random.poisson(x)
+    return spk
+
+def unpack(ww):
+    """
+    Vector of weights to the parameters in GLM,
+    used to unpack for optimization
+    """
+    # tau = np.abs(ww[:N])
+    # b = ww[N:2*N]
+    # W = ww[2*N:].reshape(N,N)
+#    tau = np.abs(ww[0])+dt # for temporal stability
+#    b = ww[1:N+1]
+#    W = ww[N+1:].reshape(N,N)
     b = ww[:N]
     W = ww[N:].reshape(N,N)
-#    W = ww.reshape(N,N)
-    # poisson log likelihood
-    ll = np.sum(spk * np.log(f(W @ phi(rt) + b[:,None])) - f(W @ phi(rt) + b[:,None])*dt) \
-            - lamb*np.linalg.norm(W) \
-            - lamb*(W.T @ W).sum()
+    return b, W
+
+def negLL(ww, spk, rt, f, dt, lamb=0):
+    """
+    Negative log-likelihood
+    """
+    N = spk.shape[0]
+    lt = spk.shape[1]
+    b,W = unpack(ww)
+    # evaluate log likelihood and gradient
+#    rt = np.zeros((N,lt))
+#    ks = 1*np.exp(-np.arange(lk)/tau)
+#    ks = np.fliplr(ks[None,:])[0]
+#    for tt in range(lk,lt):
+#        rt[:,tt] = spk[:,tt-lk:tt] @ ks
+    ### Poisson log-likelihood
+    ll = np.sum(spk * np.log(f(W @ rt + b[:,None])) - f(W @ rt + b[:,None])*dt) \
+            - lamb*np.linalg.norm(W)
     return -ll
 
-dd = N*N+N
-w_init = np.zeros([dd,])  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, spk,rt,dt,NL, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
+dd = N*N+N+0
+w_init = np.zeros([dd,])*0.1  #Wij.reshape(-1)#
+res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_map = res.x
 print(res.fun)
 print(res.success)
 
 # %% unwrap W matrix full-map
-brec = w_map[:N]
-Wrec = w_map[N:].reshape(N,N)*1.
-
-# low-rank constrained
-#brec = w_lr[:N]
-#mv, nv= w_lr[N:2*N], w_lr[2*N:]
-#Wrec = np.outer(mv,nv)
-#brec = 0
-
-# %% simulated given inferred parameters
-spk_rec = np.zeros((N,lt))
+b_rec,W_rec = unpack(w_map)
+spk_rec = np.zeros((N,T))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
-    spk_rec[:,tt] = spiking(NL(Wrec @ phi(rt_rec[:,tt]) + brec*1)*dt)
-    rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau_r*(-rt_rec[:,tt] + spk_rec[:,tt]) 
+    spk_rec[:,tt] = spiking(NL(W_rec @ (rt_rec[:,tt]) + b_rec*1)*dt)
+    rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau*(-rt_rec[:,tt] + spk_rec[:,tt]) 
 
 plt.figure()
-plt.imshow(rt_rec,aspect='auto')
+plt.imshow(spk_rec,aspect='auto')
 
 ### higher-levle
 # fit GLM-RNN with ssm output
 # should work, but can be impove with latent information
 # maybe find a way to do join inference together
+
+# %% 
