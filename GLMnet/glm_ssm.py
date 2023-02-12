@@ -26,7 +26,7 @@ hmm = ssm.HMM(num_states, obs_dim, input_dim,
           observations="poisson", #observation_kwargs=dict(C=num_categories),
           transitions="inputdriven")
 
-# %%
+# %% sample targets
 T = 1000
 samples = hmm.sample(T=T)
 state_true = samples[0]
@@ -51,7 +51,7 @@ rt_true = np.zeros((N,lt))
 for tt in range(lt-1):
      rt_true[:,tt+1] = rt_true[:,tt] + dt/tau*(-rt_true[:,tt] + spk_true[:,tt])
 
-# %%
+# %% GLM inference
 def NL(x):
 #    nl = np.exp(x)
     nl = np.log(1+np.exp(x))
@@ -86,9 +86,9 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
     """
     Negative log-likelihood
     """
-    N = spk.shape[0]
-    lt = spk.shape[1]
     b,W = unpack(ww)
+#    N = spk.shape[0]
+#    lt = spk.shape[1]
 #    b,W = lr_unpack(ww)
     # evaluate log likelihood and gradient
 #    rt = np.zeros((N,lt))
@@ -100,9 +100,12 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
 #    rt = np.zeros((N,lt))
 #    for tt in range(lt-1):
 #         rt[:,tt+1] = rt[:,tt] + dt/tau*(-rt[:,tt] + spk[:,tt])
+    
     ### Poisson log-likelihood
     ll = np.sum(spk * np.log(f(W @ rt + b[:,None])) - f(W @ rt + b[:,None])*dt) \
-            - lamb*np.linalg.norm(W)
+            - lamb*np.linalg.norm(W) #\
+#            - lamb*np.sum(f(W @ rt + b[:,None])[:,:-1]*dt-rt_true[:,1:])**2
+            ### add catigorical loss function here, for discrete firing patterns.
     return -ll
 
 dd = N*N+N+0
@@ -114,7 +117,7 @@ print(res.success)
 
 # %% unwrap W matrix full-map
 b_rec, W_rec = unpack(w_map)
-spk_rec = np.zeros((N,T))
+spk_rec = np.zeros((N,lt))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
     spk_rec[:,tt] = spiking(NL(W_rec @ (rt_rec[:,tt]) + b_rec*1)*dt)
