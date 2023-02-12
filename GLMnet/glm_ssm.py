@@ -20,7 +20,7 @@ matplotlib.rc('ytick', labelsize=30)
 
 # %% generate target data from ssm
 num_states = 3
-obs_dim = 10
+obs_dim = 20
 input_dim = 1
 hmm = ssm.HMM(num_states, obs_dim, input_dim, 
           observations="poisson", #observation_kwargs=dict(C=num_categories),
@@ -43,7 +43,8 @@ N = obs_dim*1  # neurons
 lt = T*1  # time
 dt = 0.1  # time step
 lk = 20  # kernel length
-tau = np.random.rand(N)*10
+tau = np.random.rand(N)*5+dt
+#tau = 2
 
 ### process for rate vectors
 rt_true = np.zeros((N,lt))
@@ -75,33 +76,44 @@ def unpack(ww):
     W = ww[N:].reshape(N,N)
     return b, W
 
-def negLL(ww, spk, rt, f, dt, lamb=0):
+def lr_unpack(ww):
+    b = ww[:N]
+    wl,wr = ww[N:3*N].reshape(N,2),ww[3*N:5*N].reshape(2,N)
+    W = wl @ wr
+    return b, W
+    
+def negLL(ww, spk, rt,f, dt, lamb=0):
     """
     Negative log-likelihood
     """
     N = spk.shape[0]
     lt = spk.shape[1]
     b,W = unpack(ww)
+#    b,W = lr_unpack(ww)
     # evaluate log likelihood and gradient
 #    rt = np.zeros((N,lt))
 #    ks = 1*np.exp(-np.arange(lk)/tau)
 #    ks = np.fliplr(ks[None,:])[0]
 #    for tt in range(lk,lt):
 #        rt[:,tt] = spk[:,tt-lk:tt] @ ks
+    
+#    rt = np.zeros((N,lt))
+#    for tt in range(lt-1):
+#         rt[:,tt+1] = rt[:,tt] + dt/tau*(-rt[:,tt] + spk[:,tt])
     ### Poisson log-likelihood
     ll = np.sum(spk * np.log(f(W @ rt + b[:,None])) - f(W @ rt + b[:,None])*dt) \
             - lamb*np.linalg.norm(W)
     return -ll
 
 dd = N*N+N+0
-w_init = np.zeros([dd,])*0.1  #Wij.reshape(-1)#
+w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
 res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_map = res.x
 print(res.fun)
 print(res.success)
 
 # %% unwrap W matrix full-map
-b_rec,W_rec = unpack(w_map)
+b_rec, W_rec = unpack(w_map)
 spk_rec = np.zeros((N,T))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
