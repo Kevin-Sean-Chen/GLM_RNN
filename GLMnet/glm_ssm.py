@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import ssm
 from ssm.util import one_hot, find_permutation
+from scipy.special import logsumexp
 
 import scipy as sp
 from scipy.optimize import minimize
@@ -19,7 +20,7 @@ matplotlib.rc('xtick', labelsize=30)
 matplotlib.rc('ytick', labelsize=30)
 
 # %% generate target data from ssm
-num_states = 3
+num_states = 2
 obs_dim = 20
 input_dim = 1
 hmm = ssm.HMM(num_states, obs_dim, input_dim, 
@@ -29,7 +30,7 @@ hmm = ssm.HMM(num_states, obs_dim, input_dim,
 # %% sample targets
 T = 1000
 ipt = np.sin(np.arange(0,T)/30)[:,None]
-samples = hmm.sample(T=T, input=ipt)
+samples = hmm.sample(T=T, input=ipt*1)
 state_true = samples[0]
 spk_true = samples[1].T
 
@@ -114,17 +115,62 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
 
 dd = N*N+N+N
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 10.),w_init,method='L-BFGS-B')#,tol=1e-5)
+res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
+w_map = res.x
+print(res.fun)
+print(res.success)
+
+# %% adding state information
+# if this improves inference, closed-loop latent-state inference would be important
+def unpack_state(ww,nstates):
+    b = ww[:N]
+    u = ww[N:2*N]
+    ws = ww[2*N:(2+nstates)*N].reshape(nstates,N)
+    W = ww[(2+nstates)*N:].reshape(N,N)
+    return b,u,ws,W
+
+def state2onehot(states):
+    """
+    state vector to onehot encoding, used for state-constrained likelihood
+    """
+    nstate = np.max(states)+1
+    T = len(states)
+    onehot = np.zeros((nstate,T))
+    for tt in range(T):
+        onehot[int(states[tt]),tt] = 1
+    return onehot
+
+def negLL_state(ww, spk, rt, states, f, dt, lamb=0):
+    """
+    Poisson log-likelihood plus state-classification loss function
+    """
+    nstates = states.shape[0]  # state x T
+    b,u,ws,W = unpack_state(ww,nstates)
+    temp_f = f(W @ rt + b[:,None] + U[:,None]*ipt.T)
+    lp_states = np.exp(ws @ temp_f)
+    lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
+#    lp_states = np.log(lp_states) - logsumexp(lp_states,0)[None,:]  #logP
+    ll = np.sum(spk * np.log(temp_f) - temp_f*dt)
+    state_cost = -np.sum(states * (lp_states))*1
+    
+    return -ll + state_cost
+
+onehot = state2onehot(state_true)
+dd = N*N + N*num_states + N + N
+w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
+res = sp.optimize.minimize(lambda w: negLL_state(w, spk_true,rt_true,onehot,NL,dt, 0.),\
+                           w_init,method='L-BFGS-B')
 w_map = res.x
 print(res.fun)
 print(res.success)
 
 # %% unwrap W matrix full-map
-b_rec, W_rec,U_rec = unpack(w_map)
+#b_rec, W_rec,U_rec = unpack(w_map)
+b_rec,U_rec,ws_rec,W_rec = unpack_state(w_map,num_states)
 spk_rec = np.zeros((N,lt))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
-    spk_rec[:,tt] = spiking(NL(W_rec @ (rt_rec[:,tt]) + b_rec*1 + U_rec*ipt[tt])*dt)
+    spk_rec[:,tt] = spiking(NL(W_rec @ (rt_rec[:,tt]) + b_rec*1 + 1*U_rec*ipt[tt])*dt)
     rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau*(-rt_rec[:,tt] + spk_rec[:,tt]) 
 
 plt.figure()
