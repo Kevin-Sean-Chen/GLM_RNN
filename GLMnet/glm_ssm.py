@@ -115,7 +115,7 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
 
 dd = N*N+N+N
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 10.),w_init,method='L-BFGS-B')#,tol=1e-5)
+res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_map = res.x
 print(res.fun)
 print(res.success)
@@ -140,33 +140,55 @@ def state2onehot(states):
         onehot[int(states[tt]),tt] = 1
     return onehot
 
-def negLL_state(ww, spk, rt, states, f, dt, lamb=0):
+def negLL_only_states(ws, rt_true, state_onehot):
     """
-    Poisson log-likelihood plus state-classification loss function
+    classification loss just for the states
     """
-    nstates = states.shape[0]  # state x T
-    b,u,ws,W = unpack_state(ww,nstates)
+    nstates = state_onehot.shape[0]
+    ws = ws.reshape(nstates,N)
+    lp_states = ws@rt_true #np.exp(ws @ rt_true) #
+    # lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
+    lp_states = lp_states - logsumexp(lp_states,0)[None,:]  # logP
+    ll = -np.sum(state_onehot * lp_states)
+    return ll
+
+def negLL_state(ww, spk, rt, ws, states_onehot, f, dt, lamb=0):
+    """
+    Poisson log-likelihood plus state-classification loss function, given pre-trained state-readout
+    """
+    # nstates = states.shape[0]  # state x T
+    # b,u,ws,W = unpack_state(ww,nstates)
+    b,W,u = unpack(ww)
     temp_f = f(W @ rt + b[:,None] + U[:,None]*ipt.T)
-    lp_states = np.exp(ws @ temp_f)
-    lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
-#    lp_states = np.log(lp_states) - logsumexp(lp_states,0)[None,:]  #logP
+    lp_states = ws @ temp_f  #np.exp(ws @ temp_f)
+    # lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
+    lp_states = lp_states - logsumexp(lp_states,0)[None,:]  #logP
     ll = np.sum(spk * np.log(temp_f) - temp_f*dt) - lamb*np.linalg.norm(W)
-    state_cost = -np.sum(states * (lp_states))*1
+    state_cost = -np.sum(states_onehot * (lp_states))*lamb
     
     return -ll + state_cost
 
+# %% state inference
 onehot = state2onehot(state_true)
-dd = N*N + N*num_states + N + N
+dd = N*num_states
+ws_init = np.ones([dd,])*0.1
+res = sp.optimize.minimize(lambda w: negLL_only_states(w, rt_true, onehot), ws_init, method='L-BFGS-B')
+w_map_state = res.x
+print(res.fun)
+print(res.success)
+
+# %% state-constrained inference
+dd = N*N + N + N  #N*num_states
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL_state(w, spk_true,rt_true,onehot,NL,dt, 1.),\
+res = sp.optimize.minimize(lambda w: negLL_state(w, spk_true,rt_true,w_map_state.reshape(num_states,N),onehot,NL,dt, 10.),\
                            w_init,method='L-BFGS-B')
 w_map = res.x
 print(res.fun)
 print(res.success)
 
 # %% unwrap W matrix full-map
-#b_rec, W_rec,U_rec = unpack(w_map)
-b_rec,U_rec,ws_rec,W_rec = unpack_state(w_map,num_states)
+b_rec, W_rec,U_rec = unpack(w_map)
+# b_rec,U_rec,ws_rec,W_rec = unpack_state(w_map,num_states)
 spk_rec = np.ones((N,lt))
 rt_rec = spk_rec*1
 for tt in range(lt-1):
