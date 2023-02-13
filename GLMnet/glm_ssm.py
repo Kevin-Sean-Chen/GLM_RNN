@@ -115,7 +115,7 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
 
 dd = N*N+N+N
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
+res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 10.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_map = res.x
 print(res.fun)
 print(res.success)
@@ -150,7 +150,7 @@ def negLL_state(ww, spk, rt, states, f, dt, lamb=0):
     lp_states = np.exp(ws @ temp_f)
     lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
 #    lp_states = np.log(lp_states) - logsumexp(lp_states,0)[None,:]  #logP
-    ll = np.sum(spk * np.log(temp_f) - temp_f*dt)
+    ll = np.sum(spk * np.log(temp_f) - temp_f*dt) - lamb*np.linalg.norm(W)
     state_cost = -np.sum(states * (lp_states))*1
     
     return -ll + state_cost
@@ -158,7 +158,7 @@ def negLL_state(ww, spk, rt, states, f, dt, lamb=0):
 onehot = state2onehot(state_true)
 dd = N*N + N*num_states + N + N
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL_state(w, spk_true,rt_true,onehot,NL,dt, 0.),\
+res = sp.optimize.minimize(lambda w: negLL_state(w, spk_true,rt_true,onehot,NL,dt, 1.),\
                            w_init,method='L-BFGS-B')
 w_map = res.x
 print(res.fun)
@@ -167,8 +167,8 @@ print(res.success)
 # %% unwrap W matrix full-map
 #b_rec, W_rec,U_rec = unpack(w_map)
 b_rec,U_rec,ws_rec,W_rec = unpack_state(w_map,num_states)
-spk_rec = np.zeros((N,lt))
-rt_rec = spk_rec*0
+spk_rec = np.ones((N,lt))
+rt_rec = spk_rec*1
 for tt in range(lt-1):
     spk_rec[:,tt] = spiking(NL(W_rec @ (rt_rec[:,tt]) + b_rec*1 + 1*U_rec*ipt[tt])*dt)
     rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau*(-rt_rec[:,tt] + spk_rec[:,tt]) 
