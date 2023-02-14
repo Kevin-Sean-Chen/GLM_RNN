@@ -115,7 +115,7 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
     return -ll
 
 #dd = N*N+N+N
-rank = 3
+rank = 6
 dd = 2*N*rank+N+N
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
 res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
@@ -219,3 +219,7 @@ hmm_inf = ssm.HMM(num_states, obs_dim, input_dim,
 hmm_lps = hmm_inf.fit(spk_rec.astype(int).T, inputs=ipt, method="em", num_iters=N_iters)
 
 # %%
+###
+# revise the low-rank constraint method... currently only works for rank-1, somehow
+# add in diagonal matrix in the RNN model for generic dicrete time RNN form
+###
