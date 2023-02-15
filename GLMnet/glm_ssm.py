@@ -168,8 +168,10 @@ def negLL_state(ww, spk, rt, ws, states_onehot, f, dt, lamb=0):
     lp_states = lp_states - logsumexp(lp_states,0)[None,:]  #logP
     ll = np.sum(spk * np.log(temp_f) - temp_f*dt) - lamb*np.linalg.norm(W)
     state_cost = -np.sum(states_onehot * (lp_states))*lamb
+    diag_cost = np.sum((np.diag(W)-np.ones(N))**2)*1
+    weight_cost = np.linalg.norm(W)*1
     
-    return -ll + state_cost
+    return -ll + state_cost + diag_cost + weight_cost
 
 # %% state inference
 onehot = state2onehot(state_true)
@@ -183,7 +185,7 @@ print(res.success)
 # %% state-constrained inference
 dd = N*N + N + N  #N*num_states
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL_state(w, spk_true,rt_true,w_map_state.reshape(num_states,N),onehot,NL,dt, 10.),\
+res = sp.optimize.minimize(lambda w: negLL_state(w, spk_true,rt_true,w_map_state.reshape(num_states,N),onehot,NL,dt, 0.),\
                            w_init,method='L-BFGS-B')
 w_map = res.x
 print(res.fun)
