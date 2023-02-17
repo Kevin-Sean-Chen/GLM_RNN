@@ -25,12 +25,12 @@ obs_dim = 20
 input_dim = 1
 hmm = ssm.HMM(num_states, obs_dim, input_dim, 
           observations="poisson", #observation_kwargs=dict(C=num_categories),
-          transitions="inputdriven")
+          transitions="standard")
 
 # %% sample targets
 T = 1000
 ipt = np.sin(np.arange(0,T)/30)[:,None]
-samples = hmm.sample(T=T, input=ipt*1)
+samples = hmm.sample(T=T, input=ipt*0)
 state_true = samples[0]
 spk_true = samples[1].T
 
@@ -45,8 +45,8 @@ N = obs_dim*1  # neurons
 lt = T*1  # time
 dt = 0.1  # time step
 lk = 20  # kernel length
-tau = np.random.rand(N)*5+dt
-#tau = 2
+#tau = np.random.rand(N)*5+dt
+tau = 2
 U = np.random.randn(N)*.1 #input vector
 
 ### process for rate vectors
@@ -80,11 +80,12 @@ def unpack(ww):
     W = ww[2*N:].reshape(N,N)
     return b, W, u
 
-def lr_unpack(ww):
+def lr_unpack(ww,rank):
     b = ww[:N]
-    wl,wr = ww[N:3*N].reshape(N,2),ww[3*N:5*N].reshape(2,N)
+    u = ww[N:2*N]
+    wl,wr = ww[2*N:(2+rank)*N].reshape(N,rank),ww[(2+rank)*N:(2+rank*2)*N].reshape(rank,N)
     W = wl @ wr
-    return b, W
+    return b, W, u
     
 def negLL(ww, spk, rt,f, dt, lamb=0):
     """
@@ -93,7 +94,7 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
     b,W,U = unpack(ww)
 #    N = spk.shape[0]
 #    lt = spk.shape[1]
-#    b,W = lr_unpack(ww)
+#    b,W,U = lr_unpack(ww,rank)
     # evaluate log likelihood and gradient
 #    rt = np.zeros((N,lt))
 #    ks = 1*np.exp(-np.arange(lk)/tau)
@@ -114,8 +115,10 @@ def negLL(ww, spk, rt,f, dt, lamb=0):
     return -ll
 
 dd = N*N+N+N
+#rank = 6
+#dd = 2*N*rank+N+N
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
+res = sp.optimize.minimize(lambda w: negLL(w, spk_true,rt_true,NL,dt, 10.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_map = res.x
 print(res.fun)
 print(res.success)
@@ -165,8 +168,10 @@ def negLL_state(ww, spk, rt, ws, states_onehot, f, dt, lamb=0):
     lp_states = lp_states - logsumexp(lp_states,0)[None,:]  #logP
     ll = np.sum(spk * np.log(temp_f) - temp_f*dt) - lamb*np.linalg.norm(W)
     state_cost = -np.sum(states_onehot * (lp_states))*lamb
+    diag_cost = np.sum((np.diag(W)-np.ones(N))**2)*1
+    weight_cost = np.linalg.norm(W)*1
     
-    return -ll + state_cost
+    return -ll + state_cost + diag_cost + weight_cost
 
 # %% state inference
 onehot = state2onehot(state_true)
@@ -180,7 +185,7 @@ print(res.success)
 # %% state-constrained inference
 dd = N*N + N + N  #N*num_states
 w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL_state(w, spk_true,rt_true,w_map_state.reshape(num_states,N),onehot,NL,dt, 10.),\
+res = sp.optimize.minimize(lambda w: negLL_state(w, spk_true,rt_true,w_map_state.reshape(num_states,N),onehot,NL,dt, 0.),\
                            w_init,method='L-BFGS-B')
 w_map = res.x
 print(res.fun)
@@ -188,11 +193,12 @@ print(res.success)
 
 # %% unwrap W matrix full-map
 b_rec, W_rec,U_rec = unpack(w_map)
+#b_rec, W_rec, U_rec = lr_unpack(w_map,rank)
 # b_rec,U_rec,ws_rec,W_rec = unpack_state(w_map,num_states)
 spk_rec = np.ones((N,lt))
 rt_rec = spk_rec*1
 for tt in range(lt-1):
-    spk_rec[:,tt] = spiking(NL(W_rec @ (rt_rec[:,tt]) + b_rec*1 + 1*U_rec*ipt[tt])*dt)
+    spk_rec[:,tt] = spiking(NL(W_rec @ (rt_rec[:,tt]) + b_rec*1 + 0*U_rec*ipt[tt])*dt)
     rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau*(-rt_rec[:,tt] + spk_rec[:,tt]) 
 
 plt.figure()
@@ -204,4 +210,18 @@ plt.imshow(spk_rec,aspect='auto')
 # maybe find a way to do join inference together
 # ... capture proabalistic behavior (not driven by input noise!), if possible!
 
-# %% 
+# %% inference back HMM from generated spikes
+# Now create a new HMM and fit it to the data with EM
+N_iters = 100
+hmm_inf = ssm.HMM(num_states, obs_dim, input_dim, 
+          observations="poisson", #observation_kwargs=dict(C=num_categories),
+          transitions="inputdriven")
+
+# Fit
+hmm_lps = hmm_inf.fit(spk_rec.astype(int).T, inputs=ipt, method="em", num_iters=N_iters)
+
+# %%
+###
+# revise the low-rank constraint method... currently only works for rank-1, somehow
+# add in diagonal matrix in the RNN model for generic dicrete time RNN form
+###
