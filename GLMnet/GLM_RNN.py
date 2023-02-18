@@ -25,7 +25,7 @@ matplotlib.rc('ytick', labelsize=30)
 #               test with perturbation (out-of-equilibrium behavior)
 ###
 # %% network and time length settings
-N = 20  # neurons
+N = 10  # neurons
 T = 200  # time
 dt = 0.1
 time = np.arange(0,T,dt)
@@ -185,11 +185,11 @@ Wrec = w_map[N:].reshape(N,N)*1.
 spk_rec = np.zeros((N,lt))
 rt_rec = spk_rec*0
 for tt in range(lt-1):
-    spk_rec[:,tt] = spiking(NL(Wrec @ phi(rt_rec[:,tt]) + brec*1)*dt)
+    spk_rec[:,tt] = spiking(NL(Wrec @ phi(rt_rec[:,tt]) + 1*brec + .0*M*latent[tt])*dt)
     rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau_r*(-rt_rec[:,tt] + spk_rec[:,tt]) 
 
 plt.figure()
-plt.imshow(rt_rec,aspect='auto')
+plt.imshow(spk_rec,aspect='auto')
 
 # %% rank analysis
 c_rt = np.cov(rt)
@@ -221,3 +221,43 @@ plt.plot(latent, label='latent')
 plt.plot(m_pc/np.linalg.norm(m_pc) @ rt, label='activity')
 plt.plot(m_con/np.linalg.norm(m_con) @ rt_rec, label='structure')
 plt.legend(fontsize=30)
+
+
+# %% test iteration of transfer latent
+### idea is to iteratively learn from driven network, with decaying teaching signal
+def net2vec(w,b):
+    return np.concatenate((w.reshape(-1),b.reshape(-1)))
+def vec2net(ww):
+    b = ww[:N]
+    W = ww[N:].reshape(N,N)
+    return W,b
+n_iter = 5
+decay = 0.5
+alpha = np.arange(n_iter,0,-1)/n_iter
+W_iter = -0.1*np.eye(N)
+b_iter = np.zeros(N)
+spk_iter = np.zeros((N,lt))
+rt_iter = spk_iter*1
+for ii in range(n_iter):
+    ### generate target spikes given network
+    for tt in range(lt-1):
+        spk_iter[:,tt] = spiking(NL(W_iter @ phi(rt_iter[:,tt]) + 1*b_iter + alpha[ii]*M*latent[tt])*dt)  # latent-driven spikes
+        rt_iter[:,tt+1] = rt_iter[:,tt] + dt/tau_r*(-rt_iter[:,tt] + spk_iter[:,tt])
+    ### infer network given spikes
+    w_init = net2vec(W_iter,b_iter)
+    res = sp.optimize.minimize(lambda w: negLL(w, spk_iter,rt_iter,dt,NL, 0.),w_init,method='L-BFGS-B')
+    w_map = res.x
+    W_iter,b_iter = vec2net(w_map)
+    print(res.fun)
+    
+# %%
+spk_rec = np.zeros((N,lt))
+rt_rec = spk_rec*0
+for tt in range(lt-1):
+    spk_rec[:,tt] = spiking(NL(W_iter @ phi(rt_rec[:,tt]) + 1*b_iter + 0.*M*latent[tt])*dt)
+    rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau_r*(-rt_rec[:,tt] + spk_rec[:,tt]) 
+
+plt.figure()
+plt.imshow(spk_rec,aspect='auto')
+plt.figure()
+plt.imshow(spk,aspect='auto')
