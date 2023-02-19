@@ -7,15 +7,104 @@ Created on Sat Feb 18 20:10:26 2023
 import autograd.numpy as np
 import autograd.numpy.random as npr
 import ssm.stats as stats
-import ssm.observations as Observations
+from ssm.optimizers import adam, bfgs, rmsprop, sgd, lbfgs
+from ssm.util import random_rotation, ensure_args_are_lists, logistic, logit, one_hot
 
+# %%
+class Observations(object):
+    # K = number of discrete states
+    # D = number of observed dimensions
+    # M = exogenous input dimensions (the inputs modulate the probability of discrete state transitions via a multiclass logistic regression)
 
+    def __init__(self, K, D, M):
+        self.K, self.D, self.M = K, D, M
+
+    @property
+    def params(self):
+        raise NotImplementedError
+
+    @params.setter
+    def params(self, value):
+        raise NotImplementedError
+
+    def permute(self, perm):
+        pass
+
+    @ensure_args_are_lists
+    def initialize(self, datas, inputs=None, masks=None, tags=None, init_method="random"):
+        Ts = [data.shape[0] for data in datas]
+
+        # Get initial discrete states
+        if init_method.lower() == 'kmeans':
+            # KMeans clustering
+            from sklearn.cluster import KMeans
+            km = KMeans(self.K)
+            km.fit(np.vstack(datas))
+            zs = np.split(km.labels_, np.cumsum(Ts)[:-1])
+
+        elif init_method.lower() =='random':
+            # Random assignment
+            zs = [npr.choice(self.K, size=T) for T in Ts]
+
+        else:
+            raise Exception('Not an accepted initialization type: {}'.format(init_method))
+
+        # Make a one-hot encoding of z and treat it as HMM expectations
+        Ezs = [one_hot(z, self.K) for z in zs]
+        expectations = [(Ez, None, None) for Ez in Ezs]
+
+        # Set the variances all at once to use the setter
+        self.m_step(expectations, datas, inputs, masks, tags)
+
+    def log_prior(self):
+        return 0
+
+    def log_likelihoods(self, data, input, mask, tag):
+        raise NotImplementedError
+
+    def sample_x(self, z, xhist, input=None, tag=None, with_noise=True):
+        raise NotImplementedError
+
+    def m_step(self, expectations, datas, inputs, masks, tags,
+               optimizer="bfgs", **kwargs):
+        """
+        If M-step cannot be done in closed form for the observations, default to SGD.
+        """
+        optimizer = dict(adam=adam, bfgs=bfgs, lbfgs=lbfgs, rmsprop=rmsprop, sgd=sgd)[optimizer]
+
+        # expected log joint
+        def _expected_log_joint(expectations):
+            elbo = self.log_prior()
+            for data, input, mask, tag, (expected_states, _, _) \
+                in zip(datas, inputs, masks, tags, expectations):
+                lls = self.log_likelihoods(data, input, mask, tag)
+                elbo += np.sum(expected_states * lls)
+            return elbo
+
+        # define optimization target
+        T = sum([data.shape[0] for data in datas])
+        def _objective(params, itr):
+            self.params = params
+            obj = _expected_log_joint(expectations)
+            return -obj / T
+
+        self.params = optimizer(_objective, self.params, **kwargs)
+
+    def smooth(self, expectations, data, input, tag):
+        raise NotImplementedError
+
+    def neg_hessian_expected_log_dynamics_prob(self, Ez, data, input, mask, tag=None):
+        raise NotImplementedError
+        
+    
+# %%    
 class GLM_PoissonObservations(Observations):
 
     def __init__(self, K, D, M):
         super(GLM_PoissonObservations, self).__init__(K, D, M)
         self.Wk = npr.randn(K, D, M)
         self.K, self.D, self.M = K, D, M   #K-state, D-dim output, M-dim input
+        self.nl_type = 'exp'
 
     @property
     def params(self):
@@ -33,28 +122,22 @@ class GLM_PoissonObservations(Observations):
 #        Wk_trans = np.transpose(self.Wk, (1,0,2))
 
     def log_likelihoods(self, data, input, mask, tag):
-        lambdas = np.exp((self.Wk @ input.T) * 1.0)#.astype(float)  #exponential Poisson nonlinearity
+        lambdas = self.nonlinearity((self.Wk @ input.T) * 1.0)  #exponential Poisson nonlinearity
 #        assert self.D == 1, "InputDrivenObservations written for D = 1!"
         mask = np.ones_like(data, dtype=bool) if mask is None else mask
         ############################################ fix log-ll here ##################################
         return stats.poisson_logpdf(data[None,:,:], np.transpose(lambdas,(0,2,1)), mask=mask[None,:,:]).T
-#        print(lambdas.shape)
-#        print(data.shape)
-#        return stats.poisson_logpdf(data[:,None,:], lambdas, mask=mask[:,None,:])
-        
-#        mask = np.ones_like(data, dtype=bool) if mask is None else mask
-#        return stats.poisson_logpdf(data[:, None, :], lambdas, mask=mask[:, None, :])
 
     def sample_x(self, z, xhist, input=None, tag=None, with_noise=True):
 #        assert self.D == 1, "InputDrivenObservations written for D = 1!"
         if input.ndim == 1 and input.shape == (self.M,): # if input is vector of size self.M (one time point), expand dims to be (1, M)
             input = np.expand_dims(input, axis=0)
-        lambdas = np.exp(self.Wk @ input.T)
+        lambdas = self.nonlinearity(self.Wk @ input.T)
         if lambdas[z].shape[1]==1:
-            lambz = np.squeeze(lambdas[z])
+            lambz = np.squeeze(lambdas[z])  # dealing with 1-D indexiing
         else:
             lambz = lambdas[z]
-        return npr.poisson(lambz)   #y = Poisson(exp(W @ x))
+        return npr.poisson(lambz)   # y = Poisson(exp(W @ x)) for classic exp-Poisson spiking
 
     def m_step(self, expectations, datas, inputs, masks, tags, **kwargs):
         Observations.m_step(self, expectations, datas, inputs, masks, tags, optimizer="bfgs", **kwargs)
@@ -83,6 +166,11 @@ class GLM_PoissonObservations(Observations):
         """
 #        return expectations.dot(np.exp(self.log_lambdas))
         raise NotImplementedError
+        
+    def nonlinearity(self,x):
+        if self.nl_type == 'exp':
+            nl = np.exp(x)
+        return nl
 
 # %%
 class InputVonMisesObservations(Observations):
@@ -107,15 +195,8 @@ class InputVonMisesObservations(Observations):
         mus, kappas = self.mus, np.exp(self.log_kappas)
         ###
         driven_angle = mus @ input.T  # K x D x T
-        mask = np.ones_like(data, dtype=bool) if mask is None else mask
-#        return stats.vonmises_logpdf(data[:, None, :], driven_angle, kappas, mask=mask[:, None, :])
-        # kappa_t = np.repeat(kappas[:,:,None], input.T.shape[-1], axis=2)  #time-independent
-        # return stats.vonmises_logpdf(data[None,:,:], np.transpose(driven_angle,(0,2,1)), \
-        #                              np.transpose(kappa_t,(0,2,1)), mask=mask[None,:,:]).T
-        
+        mask = np.ones_like(data, dtype=bool) if mask is None else mask    
         sigmas_t = np.repeat(kappas[None, :,:], input.T.shape[-1], axis=0)
-        # print(sigmas_t.shape)
-        # print(driven_angle.shape)
         return stats.multivariate_normal_logpdf(data[:,:,None], np.transpose(driven_angle,(2,0,1)), sigmas_t[:,:,:,None])
 
 
