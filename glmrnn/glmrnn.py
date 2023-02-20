@@ -7,6 +7,7 @@ Created on Thu Feb 16 11:47:29 2023
 """
 import numpy as np
 import scipy as sp
+from ssm.regression import fit_scalar_glm
 
 class glmrnn:
     
@@ -37,7 +38,7 @@ class glmrnn:
             lamb = self.W @ rt[:,tt] + self.b + self.U*ipt[tt]
             spk[:,tt+1] = self.spiking(self.nonlinearity(lamb*self.dt))
             rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
-        self.data = (spk,rt,ipt)
+#        self.data = (spk,rt,ipt)
         return spk, rt
     
     def nonlinearity(self, x):
@@ -81,10 +82,13 @@ class glmrnn:
     #@classmethod
     def kernel_filt(self, spk):
         """
-        
+        given spike train produce synaptic filtered rate
+        I: spk: N x T
+        O: rt: N x T
         """
         rt = np.zeros((self.N, self.T))
         for tt in range(self.T-1):
+            print(tt)
             rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
         return rt
         
@@ -111,13 +115,14 @@ class glmrnn:
         W = ww[2*self.N:].reshape(self.N,self.N)
         return b,U,W
     
-    def fitting(self, lamb=0):
+    def fit_single(self, data, lamb=0):
         """
         MLE fit for GLM-RNN parameters
         I: regularization parameter
         O: fitting summary
         """
-        spk,rt,ipt = self.data
+        spk,ipt = data
+        rt = self.kernel_filt(spk)
         dd = self.N**2 + self.N + self.N
         w_init = np.ones([dd,])*0.1
         res = sp.optimize.minimize(lambda w: self.neg_log_likelihood(w, \
@@ -126,4 +131,58 @@ class glmrnn:
         self.b, self.U, self.W = self.vec2param(w_map)
         
         return res.fun, res.success
+    
+    def fit_batch(self, data):
+        """
+        MLE fit for GLM-RNN parameters, with batch and with ssm function
+        I: data: (list(spk), list(rt), list(ut))
+                spk: TxN  (from ssm by default)
+                ut: T x input_dim
+        O: None... fitting parameters in class
+        """
+        l_spk, l_ut = data
+        reps = len(l_spk)
+        Xs = []
+        ys = []
+        param_W = np.zeros((self.N, self.N))
+        param_b = np.zeros(self.N)
+        param_U = np.zeros(self.N)
+        for n in range(self.N):  # loop through neurons, given that we assume indpendence
+            for r in range(reps):
+                rt_r = self.kernel_filt(l_spk[r].T).T # T x N rate matrix
+                tempx = np.concatenate((rt_r, l_ut[r]),1)  # design matrix is rate and input
+                Xs.append(tempx)
+                ys.append(l_spk[r][:,n])
+            thetas = self.fit_glm_local(Xs,ys)  # fitting per neuron observation
+            param_W[n,:] = thetas[0][:-1]  # neuron weights
+            param_U[n] = thetas[0][-1]  # input weights
+            param_b[n] = thetas[1]  # baseline rate
+        
+        self.W = param_W
+        self.U = param_U
+        self.b = param_b
+        return
+    
+    def fit_glm_local(self, Xs, ys):
+        """
+        helper function to hide ssm glm-fitting function
+        """
+        theta = fit_scalar_glm(Xs, ys,
+                       model="poisson",
+                       mean_function="softplus",
+                       model_hypers={},
+                       fit_intercept=True,
+                       weights=None,
+                       X_variances=None,
+                       prior=None,
+                       proximal_point=None,
+                       threshold=1e-6,
+                       step_size=1,
+                       max_iter=50,
+                       verbose=False)
+        return theta
+    #####
+    # IDEA: with 'weight' parameter normaly use in ssm training, develop an algorithm for GLM-RNN,
+    #       that as similar weighting for state learning...
+    #####
     

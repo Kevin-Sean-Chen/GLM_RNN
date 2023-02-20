@@ -61,15 +61,15 @@ inpts = list(inpts) #convert inpts to correct format
 
 # %%
 # Generate a sequence of latents and choices for each session
-true_latents, true_choices = [], []
+true_latents, true_spikes = [], []
 for sess in range(num_sess):
     true_z, true_y = true_glmhmm.sample(time_len, input=inpts[sess])  #changed hmm.py line206!
     true_latents.append(true_z)
-    true_choices.append(true_y)
+    true_spikes.append(true_y)
     
 # %%
 # Calculate true loglikelihood
-true_ll = true_glmhmm.log_probability(true_choices, inputs=inpts) 
+true_ll = true_glmhmm.log_probability(true_spikes, inputs=inpts) 
 print("true ll = " + str(true_ll))
 
 # %% fix this~~~ for inference
@@ -78,10 +78,10 @@ new_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations= "gaussian", t
 new_glmhmm.observations = GLM_PoissonObservations(num_states, obs_dim, input_dim) ##obs:"input_driven"
 
 N_iters = 100 # maximum number of EM iterations. Fitting with stop earlier if increase in LL is below tolerance specified by tolerance parameter
-fit_ll = new_glmhmm.fit(true_choices, inputs=inpts, method="em", num_iters=N_iters)#, tolerance=10**-4)
+fit_ll = new_glmhmm.fit(true_spikes, inputs=inpts, method="em", num_iters=N_iters)#, tolerance=10**-4)
 
 # %%
-new_glmhmm.permute(find_permutation(true_latents[0], new_glmhmm.most_likely_states(true_choices[0], input=inpts[0])))
+new_glmhmm.permute(find_permutation(true_latents[0], new_glmhmm.most_likely_states(true_spikes[0], input=inpts[0])))
 
 # %%
 true_obs_ws = true_glmhmm.observations.Wk #mus
@@ -109,18 +109,34 @@ try:
     plt.title('Transition weights', fontsize=40)
 except:
     print('no transition kernel')
-    
+
+# %%
+###############################################################################
 # %% GLM-RNN model
 N = obs_dim*1
 T = time_len*1
 dt = 0.1
 tau = 2
 
+spk_targ = true_spikes[1].T
 my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
-spk,rt = my_glmrnn.forward(inpts[0])
+spk,rt = my_glmrnn.forward(inpts[1])
+
 # %% inference
-my_glmrnn.data = (true_y.T, my_glmrnn.kernel_filt(true_y.T), inpts[0])
-my_glmrnn.fitting()
+data = (spk_targ, inpts[1])
+my_glmrnn.fit_single(data)
 
 # %%
-spk,rt = my_glmrnn.forward(inpts[0])
+spk,rt = my_glmrnn.forward(inpts[1])
+plt.figure()
+plt.subplot(121)
+plt.imshow(spk_targ,aspect='auto')
+plt.subplot(122)
+plt.imshow(spk,aspect='auto')
+
+# %% test with batch
+datas = (true_spikes, inpts)
+my_glmrnn.fit_batch(datas)
+
+# %%
+
