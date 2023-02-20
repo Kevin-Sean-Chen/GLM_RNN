@@ -88,7 +88,6 @@ class glmrnn:
         """
         rt = np.zeros((self.N, self.T))
         for tt in range(self.T-1):
-            print(tt)
             rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
         return rt
         
