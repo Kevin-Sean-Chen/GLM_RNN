@@ -110,7 +110,7 @@ try:
 except:
     print('no transition kernel')
 
-# %%
+# %% introducing GLM-RNN
 ###############################################################################
 # %% GLM-RNN model
 N = obs_dim*1
@@ -127,16 +127,50 @@ data = (spk_targ, inpts[1])
 my_glmrnn.fit_single(data)
 
 # %%
-spk,rt = my_glmrnn.forward(inpts[1])
-plt.figure()
+ii = 9
+spk,rt = my_glmrnn.forward(inpts[ii])
+plt.figure(figsize=(15,10))
 plt.subplot(121)
-plt.imshow(spk_targ,aspect='auto')
+plt.imshow(true_spikes[ii].T,aspect='auto')
 plt.subplot(122)
 plt.imshow(spk,aspect='auto')
 
 # %% test with batch
+#datas = ([true_spikes[0]], [inpts[0]])  # debug this~~~   # might be 'dt'??
 datas = (true_spikes, inpts)
-my_glmrnn.fit_batch(datas)
+#my_glmrnn.fit_batch(datas)
+my_glmrnn.fit_batch_sp(datas)  # this seems to currently work!!
 
+# %% now fit it back with ssm!
+###############################################################################
+rnn_spikes = []
+for sess in range(num_sess):
+    spk, rt = my_glmrnn.forward(inpts[sess])  #changed hmm.py line206!
+    rnn_spikes.append(spk.T)
+    
 # %%
+rnn_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations= "gaussian", transitions="standard")
+rnn_glmhmm.observations = GLM_PoissonObservations(num_states, obs_dim, input_dim)
+fit_ll = rnn_glmhmm.fit(rnn_spikes, inputs=inpts, method="em", num_iters=N_iters)
 
+# %% emissions
+rnn_glmhmm.permute(find_permutation(true_latents[0], rnn_glmhmm.most_likely_states(rnn_spikes[0], input=inpts[0])))
+true_obs_ws = true_glmhmm.observations.Wk #mus
+inferred_obs_ws = rnn_glmhmm.observations.Wk
+
+cols = ['r', 'g', 'b']
+plt.figure()
+for ii in range(num_states):
+    plt.plot(true_obs_ws[:][ii],linewidth=5, label='ture', color=cols[ii])
+    plt.plot(inferred_obs_ws[:][ii],'--',linewidth=5,label='inferred',color=cols[ii])
+plt.legend(fontsize=20)
+plt.title('Emission weights', fontsize=40)
+
+# %% latents
+ii = 6
+inferred_states = rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=inpts[ii])
+plt.figure()
+plt.subplot(211)
+plt.imshow(true_latents[ii][None,:], aspect='auto')
+plt.subplot(212)
+plt.imshow(inferred_states[None,:], aspect="auto")

@@ -5,9 +5,13 @@ Created on Thu Feb 16 11:47:29 2023
 
 @author: kschen
 """
-import numpy as np
+#import numpy as np
+import autograd.numpy as np
 import scipy as sp
 from ssm.regression import fit_scalar_glm
+
+from ssm.util import ensure_args_are_lists
+from ssm.optimizers import adam, bfgs, rmsprop, sgd
 
 class glmrnn:
     
@@ -32,14 +36,14 @@ class glmrnn:
         """
         forward simulation of GLM-RNN given parameters
         """
-        spk = np.zeros((self.N, self.T))
-        rt = np.zeros((self.N, self.T))
+        spk = np.ones((self.N, self.T))
+        rt = np.ones((self.N, self.T))
         for tt in range(self.T-1):
             lamb = self.W @ rt[:,tt] + self.b + self.U*ipt[tt]
             spk[:,tt+1] = self.spiking(self.nonlinearity(lamb*self.dt))
             rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
 #        self.data = (spk,rt,ipt)
-        return spk, rt
+        return spk.astype(int), rt
     
     def nonlinearity(self, x):
         """
@@ -149,10 +153,11 @@ class glmrnn:
         for n in range(self.N):  # loop through neurons, given that we assume indpendence
             for r in range(reps):
                 rt_r = self.kernel_filt(l_spk[r].T).T # T x N rate matrix
-                tempx = np.concatenate((rt_r, l_ut[r]),1)  # design matrix is rate and input
+                tempx = np.concatenate((rt_r, l_ut[r]),1)*self.dt  # design matrix is rate and input
                 Xs.append(tempx)
                 ys.append(l_spk[r][:,n])
-            thetas = self.fit_glm_local(Xs,ys)  # fitting per neuron observation
+#            thetas = self.fit_glm_local(Xs,ys)  # fitting per neuron observation
+            thetas = self.fit_glm(Xs, ys)
             param_W[n,:] = thetas[0][:-1]  # neuron weights
             param_U[n] = thetas[0][-1]  # input weights
             param_b[n] = thetas[1]  # baseline rate
@@ -164,7 +169,7 @@ class glmrnn:
     
     def fit_glm_local(self, Xs, ys):
         """
-        helper function to hide ssm glm-fitting function
+        helper function to hide ssm glm-fitting function... not sure if it works
         """
         theta = fit_scalar_glm(Xs, ys,
                        model="poisson",
@@ -180,6 +185,56 @@ class glmrnn:
                        max_iter=50,
                        verbose=False)
         return theta
+    
+    def log_marginal(self, ww, spks, ipts):
+        """
+        summing over list for log-marginal calculation
+        """
+        ll = 0
+        for spk,ipt in zip(spks, ipts):
+            rt = self.kernel_filt(spk.T)
+            lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt)
+            ll += np.sum(lli)
+        return ll
+    
+    def fit_batch_sp(self, data, lamb=0):
+        """
+        MLE fit for GLM-RNN parameters
+        I: data with lists for spikes and inputs
+        O: fitting summary
+        """
+        l_spk, l_ut = data
+        dd = self.N**2 + self.N + self.N
+        params = np.ones([dd,])*0.1
+        def _objective(params):
+            obj = self.log_marginal(params, l_spk, l_ut)
+            return -obj
+        
+        res = sp.optimize.minimize(lambda w: _objective(w), params, method='L-BFGS-B')
+        w_map = res.x
+        self.b, self.U, self.W = self.vec2param(w_map)
+        
+        return res.fun, res.success
+    
+    # @ensure_args_are_lists
+    def fit_glm(self, data, num_iters=1000, optimizer="adam", **kwargs):
+        """
+        Borrowing the ssm package method
+        """
+        optimizer = dict(adam=adam, bfgs=bfgs, rmsprop=rmsprop,
+                         sgd=sgd)[optimizer]
+        l_spk, l_ut = data
+        params = np.ones(self.N**2 + self.N*2)
+        def _objective(params, itr):
+            obj = self.log_marginal(params, l_spk, l_ut)
+            return -obj
+
+        params = optimizer(_objective,
+                                params,
+                                num_iters=num_iters,
+                                **kwargs)
+        self.b, self.U, self.W = self.vec2param(params)
+        
     #####
     # IDEA: with 'weight' parameter normaly use in ssm training, develop an algorithm for GLM-RNN,
     #       that as similar weighting for state learning...
