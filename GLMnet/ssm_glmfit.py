@@ -66,7 +66,7 @@ stim_vals = [-1, -0.5, -0.25, -0.125, -0.0625, 0, 0.0625, 0.125, 0.25, 0.5, 1]
 #inpts = np.random.randn(num_sess, num_trials_per_sess, input_dim)
 ### noisy sine input
 inpts = np.sin(2*np.pi*np.arange(time_len)/300)[:,None]*.5 +\
-        np.sin(2*np.pi*np.arange(time_len)/120)[:,None]*1. +\
+        np.sin(2*np.pi*np.arange(time_len)/1000)[:,None]*1. +\
         .1*npr.randn(time_len,input_dim)
 
 inpts = np.repeat(inpts[None,:,:], num_sess, axis=0)
@@ -133,7 +133,7 @@ except:
 N = obs_dim*1
 T = time_len*1
 dt = 0.1
-tau = 5
+tau = 2
 
 spk_targ = true_spikes[0].T
 my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
@@ -144,20 +144,22 @@ data = (spk_targ, inpts[0])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 0
+ii = 2
 spk,rt = my_glmrnn.forward(inpts[ii])
 plt.figure(figsize=(15,10))
 plt.subplot(121)
 plt.imshow(true_spikes[ii].T,aspect='auto')
+plt.title('true spikes',fontsize=40)
 plt.subplot(122)
 plt.imshow(spk,aspect='auto')
+plt.title('inferred spikes',fontsize=40)
 
 # %% test with batch
 #datas = ([true_spikes[0]], [inpts[0]])  # debug this~~~   # might be 'dt'??
 datas = (true_spikes, inpts)
-#my_glmrnn.fit_batch(datas)
+#my_glmrnn.fit_batch(datas)  # using regression tools
 #my_glmrnn.fit_batch_sp(datas)  # this seems to currently work!!...but take too long
-my_glmrnn.fit_glm(datas)
+my_glmrnn.fit_glm(datas)  # using ssm gradient
 
 # %% now fit it back with ssm!
 ###############################################################################
@@ -187,10 +189,12 @@ plt.legend(fontsize=20)
 plt.title('Emission weights', fontsize=40)
 
 # %% latents
-ii = 1
+ii = 0
 inferred_states = rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=inpts[ii])
 plt.figure()
 plt.subplot(211)
 plt.imshow(true_latents[ii][None,:], aspect='auto')
+plt.title('true latent',fontsize=40)
 plt.subplot(212)
+plt.title('inferred latent',fontsize=40)
 plt.imshow(inferred_states[None,:], aspect="auto")
