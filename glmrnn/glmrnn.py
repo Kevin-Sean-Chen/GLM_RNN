@@ -13,6 +13,7 @@ from ssm.regression import fit_scalar_glm
 from ssm.util import ensure_args_are_lists
 from ssm.optimizers import adam, bfgs, rmsprop, sgd
 
+eps = 10**-10
 class glmrnn:
     
     def __init__(self, N, T, dt, k, kernel_type='tau', nl_type='log-linear', spk_type="Poisson"):
@@ -54,7 +55,7 @@ class glmrnn:
         if self.nl_type=='exp':
             nl = np.exp(x)
         if self.nl_type=='log-linear':
-            nl = np.log((1+np.exp(x)))
+            nl = np.log((1+np.exp(x))+eps)
         if self.nl_type=='sigmoid':
             nl = (self.lamb_max-self.lamb_min)/(1+np.exp(-x)) + self.lamb_min    
         return nl
@@ -103,7 +104,7 @@ class glmrnn:
         O: negative log-likelihood
         """
         b,U,W = self.vec2param(ww)
-        ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)) \
+        ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
                 - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
                 - lamb*np.linalg.norm(W)
         return -ll
@@ -217,7 +218,7 @@ class glmrnn:
         return res.fun, res.success
     
     # @ensure_args_are_lists
-    def fit_glm(self, data, num_iters=1000, optimizer="adam", **kwargs):
+    def fit_glm(self, data, num_iters=1000, optimizer="bfgs", **kwargs):
         """
         Borrowing the ssm package method
         """
