@@ -144,7 +144,7 @@ data = (spk_targ, inpts[0])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 2
+ii = 1
 spk,rt = my_glmrnn.forward(inpts[ii])
 plt.figure(figsize=(15,10))
 plt.subplot(121)

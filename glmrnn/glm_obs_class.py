@@ -173,6 +173,14 @@ class GLM_PoissonObservations(Observations):
         return nl
 
 # %%
+class GLM_GaussianObservations(Observations):
+    def __init__(self, K, D, M):
+        super(GLM_GaussianObservations, self).__init__(K, D, M)
+        self.Wk = npr.randn(K, D, M)
+        self.K, self.D, self.M = K, D, M   #K-state, D-dim output, M-dim input
+        self.nl_type = 'exp'
+    
+# %%
 class InputVonMisesObservations(Observations):
     def __init__(self, K, D, M):
         super(InputVonMisesObservations, self).__init__(K, D, M)

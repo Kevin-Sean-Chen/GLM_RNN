@@ -28,6 +28,8 @@ class glmrnn:
             self.lamb_min = 0
         if spk_type=="neg-bin":
             self.rnb = 0.1
+        if spk_type=='Gaussian':
+            self.std = 0.1
         self.W = np.random.randn(N,N)*0.1  # initial network
         self.b = np.random.randn(N)*0.1  # initial baseline
         self.U = np.random.randn(N)*0.1  # initial input vector
@@ -44,6 +46,8 @@ class glmrnn:
             spk[:,tt+1] = self.spiking(self.nonlinearity(lamb*self.dt))
             rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
 #        self.data = (spk,rt,ipt)
+        if self.spk_type=='Gaussian':
+            return spk, rt
         return spk.astype(int), rt
     
     def nonlinearity(self, x):
@@ -72,6 +76,8 @@ class glmrnn:
             spk = np.random.binomial(1,nl)
         if self.spk_type=='neg-bin':
             spk = np.random.negative_binomial(self.rnb+nl, self.rnb)
+        if self.spk_type=='Gaussian':
+            spk = nl*1 + np.random.randn()*self.std
         return spk
     
     def kernel(self, rt, spk):
