@@ -8,6 +8,7 @@ Created on Thu Feb 16 11:47:29 2023
 #import numpy as np
 import autograd.numpy as np
 import scipy as sp
+from scipy.special import logsumexp
 from ssm.regression import fit_scalar_glm
 
 from ssm.util import ensure_args_are_lists
@@ -103,18 +104,43 @@ class glmrnn:
         return rt
         
         
-    def neg_log_likelihood(self, ww, spk, rt, ipt=None, lamb=0):
+    def neg_log_likelihood(self, ww, spk, rt, ipt=None, state=None, lamb=0):
         """
         Negative log-likelihood calculation
         I: parameter vector, spike, rate, input, and regularization
         O: negative log-likelihood
         """
-        b,U,W = self.vec2param(ww)
-        ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
-                - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
-                - lamb*np.linalg.norm(W)
-        return -ll
-    
+        if state is None:
+            b,U,W = self.vec2param(ww)
+            ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
+                    - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
+                    - lamb*np.linalg.norm(W)
+            return -ll
+        else:
+            b,U,W = self.vec2param(ww[:-(self.K*self.N)])
+            ws = ww[-(self.K*self.N):].reshape(self.K, self.N)  #state readout weights
+            ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
+                    - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
+                    - lamb*np.linalg.norm(W)
+            lp_states = ws @ rt #np.exp(ws @ rt_true) #
+            # lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
+            lp_states = lp_states - logsumexp(lp_states,0)[None,:]  # logP
+            onehot = self.state2onehot(state)  # one-hot of true states
+            state_cost = -np.sum(onehot * lp_states)
+            
+            return -ll + state_cost
+           
+    def state2onehot(self, states):
+        """
+        state vector to onehot encoding, used for state-constrained likelihood
+        """
+        nstate = np.max(states) + 1
+        T = len(states)
+        onehot = np.zeros((nstate,T))
+        for tt in range(T):
+            onehot[int(states[tt]),tt] = 1
+        return onehot
+
     def param2vec(self, b,U,W):
         ww = np.concatenate((b.reshape(-1),U.reshape(-1),W.reshape(-1)))
         return ww
@@ -193,15 +219,23 @@ class glmrnn:
                        verbose=False)
         return theta
     
-    def log_marginal(self, ww, spks, ipts):
+    def log_marginal(self, ww, spks, ipts, state=None):
         """
         summing over list for log-marginal calculation
         """
         ll = 0
-        for spk,ipt in zip(spks, ipts):
-            rt = self.kernel_filt(spk.T)
-            lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt)
-            ll += np.sum(lli)
+        if state is None:
+            for spk,ipt in zip(spks, ipts):
+                rt = self.kernel_filt(spk.T)
+                if state is None:
+                    lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt)
+                ll += np.sum(lli)
+        else:
+            for spk,ipt,stt in zip(spks, ipts, state):
+                rt = self.kernel_filt(spk.T)
+                if state is None:
+                    lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt, stt)
+                ll += np.sum(lli)
         return ll
     
     def fit_batch_sp(self, data, lamb=0):
@@ -247,3 +281,24 @@ class glmrnn:
     #       that as similar weighting for state learning...
     #####
     
+    def fit_glm_states(self, data, num_iters=1000, optimizer="bfgs", **kwargs):
+        """
+        fitting GLM network with state constraints
+        """
+        optimizer = dict(adam=adam, bfgs=bfgs, rmsprop=rmsprop,
+                         sgd=sgd)[optimizer]
+        l_spk, l_ut, l_state = data
+        self.K = np.max(l_state[0]) + 1  # number of states
+        params = np.ones(self.N**2 + self.N*2 + self.N*self.K)
+        def _objective(params, itr):
+            obj = self.log_marginal(params, l_spk, l_ut, l_state)
+            return -obj
+
+        params = optimizer(_objective,
+                                params,
+                                num_iters=num_iters,
+                                **kwargs)
+        self.b, self.U, self.W = self.vec2param(params[:(self.N**2 + self.N*2)])
+        self.ws = params[(self.N**2 + self.N*2):].reshape(self.K,self.N)  # state x neurons
+        
+        
