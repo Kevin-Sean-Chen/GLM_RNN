@@ -8,7 +8,7 @@ Created on Thu Feb 16 11:47:29 2023
 #import numpy as np
 import autograd.numpy as np
 import scipy as sp
-from scipy.special import logsumexp
+from autograd.scipy.special import logsumexp
 from ssm.regression import fit_scalar_glm
 
 from ssm.util import ensure_args_are_lists
@@ -35,6 +35,7 @@ class glmrnn:
         self.b = np.random.randn(N)*0.1  # initial baseline
         self.U = np.random.randn(N)*0.1  # initial input vector
         self.data = [] 
+        self.K = 2 # number of states for state-transitions
         
     def forward(self, ipt):
         """
@@ -117,8 +118,8 @@ class glmrnn:
                     - lamb*np.linalg.norm(W)
             return -ll
         elif state is not None:
-            b,U,W = self.vec2param(ww[:-(self.K*self.N)])
-            ws = ww[-(self.K*self.N):].reshape(self.K, self.N)  #state readout weights
+            b,U,W,ws = self.vec2param(ww, True)
+#            ws = ww[-(self.K*self.N):].reshape(self.K, self.N)  #state readout weights
             ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
                     - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
                     - lamb*np.linalg.norm(W)
@@ -145,11 +146,16 @@ class glmrnn:
         ww = np.concatenate((b.reshape(-1),U.reshape(-1),W.reshape(-1)))
         return ww
     
-    def vec2param(self, ww):
+    def vec2param(self, ww, state=False):
         b = ww[:self.N]
         U = ww[self.N:2*self.N]
-        W = ww[2*self.N:].reshape(self.N,self.N)
-        return b,U,W
+        if state is False:
+            W = ww[2*self.N:].reshape(self.N,self.N)
+            return b,U,W
+        if state is True:
+            W = ww[2*self.N:2*self.N+self.N*self.N].reshape(self.N,self.N)
+            ws = ww[2*self.N+self.N*self.N:].reshape(self.K,self.N)  # state readout
+            return b,U,W,ws
     
     def fit_single(self, data, lamb=0):
         """
@@ -279,14 +285,14 @@ class glmrnn:
     #       that as similar weighting for state learning...
     #####
     
-    def fit_glm_states(self, data, num_iters=1000, optimizer="bfgs", **kwargs):
+    def fit_glm_states(self, data, k_states, num_iters=1000, optimizer="bfgs", **kwargs):
         """
         fitting GLM network with state constraints
         """
         optimizer = dict(adam=adam, bfgs=bfgs, rmsprop=rmsprop,
                          sgd=sgd)[optimizer]
         l_spk, l_ut, l_state = data
-        self.K = np.max(l_state[0]) + 1  # number of states
+        self.K = k_states#np.max(l_state[0]) + 1  # number of states
         params = np.ones(self.N**2 + self.N*2 + self.N*self.K)
         def _objective(params, itr):
             obj = self.log_marginal(params, l_spk, l_ut, l_state)
@@ -296,7 +302,7 @@ class glmrnn:
                                 params,
                                 num_iters=num_iters,
                                 **kwargs)
-        self.b, self.U, self.W = self.vec2param(params[:(self.N**2 + self.N*2)])
-        self.ws = params[(self.N**2 + self.N*2):].reshape(self.K,self.N)  # state x neurons
+        self.b, self.U, self.W, self.ws = self.vec2param(params,True)
+#        self.ws = params[(self.N**2 + self.N*2):].reshape(self.K,self.N)  # state x neurons
         
         

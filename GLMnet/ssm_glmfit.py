@@ -163,7 +163,7 @@ my_glmrnn.fit_glm(datas)  # using ssm gradient
 
 # %% test states
 datas = (true_spikes, inpts, true_latents)
-my_glmrnn.fit_glm_states(datas)
+my_glmrnn.fit_glm_states(datas,2)
 ###
 # fix bug here
 ###
