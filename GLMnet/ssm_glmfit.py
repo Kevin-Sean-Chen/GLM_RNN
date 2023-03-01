@@ -144,7 +144,7 @@ data = (spk_targ, inpts[0])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 1
+ii = 0
 spk,rt = my_glmrnn.forward(inpts[ii])
 plt.figure(figsize=(15,10))
 plt.subplot(121)
@@ -160,6 +160,13 @@ datas = (true_spikes, inpts)
 #my_glmrnn.fit_batch(datas)  # using regression tools
 #my_glmrnn.fit_batch_sp(datas)  # this seems to currently work!!...but take too long
 my_glmrnn.fit_glm(datas)  # using ssm gradient
+
+# %% test states
+datas = (true_spikes, inpts, true_latents)
+my_glmrnn.fit_glm_states(datas)
+###
+# fix bug here
+###
 
 # %% now fit it back with ssm!
 ###############################################################################

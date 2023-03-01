@@ -116,7 +116,7 @@ class glmrnn:
                     - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
                     - lamb*np.linalg.norm(W)
             return -ll
-        else:
+        elif state is not None:
             b,U,W = self.vec2param(ww[:-(self.K*self.N)])
             ws = ww[-(self.K*self.N):].reshape(self.K, self.N)  #state readout weights
             ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
@@ -162,7 +162,7 @@ class glmrnn:
         dd = self.N**2 + self.N + self.N
         w_init = np.ones([dd,])*0.1
         res = sp.optimize.minimize(lambda w: self.neg_log_likelihood(w, \
-                        spk, rt, ipt, lamb), w_init, method='L-BFGS-B')
+                        spk, rt, ipt, None, lamb), w_init, method='L-BFGS-B')
         w_map = res.x
         self.b, self.U, self.W = self.vec2param(w_map)
         
@@ -227,14 +227,12 @@ class glmrnn:
         if state is None:
             for spk,ipt in zip(spks, ipts):
                 rt = self.kernel_filt(spk.T)
-                if state is None:
-                    lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt)
+                lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt)
                 ll += np.sum(lli)
         else:
             for spk,ipt,stt in zip(spks, ipts, state):
                 rt = self.kernel_filt(spk.T)
-                if state is None:
-                    lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt, stt)
+                lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt, stt)
                 ll += np.sum(lli)
         return ll
     
