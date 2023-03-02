@@ -65,8 +65,8 @@ stim_vals = [-1, -0.5, -0.25, -0.125, -0.0625, 0, 0.0625, 0.125, 0.25, 0.5, 1]
 ### random input
 #inpts = np.random.randn(num_sess, num_trials_per_sess, input_dim)
 ### noisy sine input
-inpts = np.sin(2*np.pi*np.arange(time_len)/300)[:,None]*.5 +\
-        np.sin(2*np.pi*np.arange(time_len)/1000)[:,None]*1. +\
+inpts = np.sin(2*np.pi*np.arange(time_len)/600)[:,None]*.5 +\
+        np.cos(2*np.pi*np.arange(time_len)/200)[:,None]*1. +\
         .1*npr.randn(time_len,input_dim)
 
 inpts = np.repeat(inpts[None,:,:], num_sess, axis=0)
@@ -133,7 +133,7 @@ except:
 N = obs_dim*1
 T = time_len*1
 dt = 0.1
-tau = 2
+tau = 1
 
 spk_targ = true_spikes[0].T
 my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
@@ -165,7 +165,7 @@ my_glmrnn.fit_glm(datas)  # using ssm gradient
 datas = (true_spikes, inpts, true_latents)
 my_glmrnn.fit_glm_states(datas,2)
 ###
-# fix bug here
+# idea is that, given more input driven has better inference, we should provide fake input!
 ###
 
 # %% now fit it back with ssm!
