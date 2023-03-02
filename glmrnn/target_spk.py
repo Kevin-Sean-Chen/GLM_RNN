@@ -5,7 +5,7 @@ Created on Sat Feb 18 22:44:33 2023
 @author: kevin
 """
 import numpy as np
-from glmrnn.glmrnn import glmrnn as gr
+# from glmrnn.glmrnn import glmrnn as gr
 
 class target_spk(object):
     
@@ -13,9 +13,9 @@ class target_spk(object):
         self.N = N
         self.T = T
         self.d = d
-        self.latent_type = latent_type
-        self.latent = np.zeros((d,T))
-        self.M = np.random.randn(self.N, self.d)  # loading matrix
+        # self.latent_type = latent_type
+        # self.latent = np.zeros((d,T))
+        # self.M = np.random.randn(self.N, self.d)  # loading matrix
         self.my_network = gr  # containing the class for glmrnn settings
         
     def _forward(self, latent):
@@ -29,8 +29,9 @@ class target_spk(object):
         b = 0
         # simulate spikes    
         spk = np.zeros((self.N,self.T))  # spike train
-        for tt in range(self.T-1):
-             spk[:,tt] = self.my_network.spiking(self.my_network.nonlinearity(M*latent[tt]-b))  # latent-driven spikes
+        # print(latent.shape)
+        for tt in range(self.T-1): #test
+            spk[:,tt] = self.my_network.spiking(self.my_network.nonlinearity(M @ latent[tt]-b))  # latent-driven spikes
         return spk
         
     def bistable(self):
@@ -114,13 +115,66 @@ class target_spk(object):
         """
         Lorentz attractor
         """
-        return
+        dt = 0.01
+        xyzs = np.empty((self.T-1 + 1, 3))  # Need one more for the initial values
+        xyzs[0] = (0., 1., 1.05)  # Set initial values
+        for i in range(self.T-1):
+            xyzs[i+1] = xyzs[i] + self._lorenz(xyzs[i])*dt
+        latent = xyzs[:,:self.d]#.T.squeeze()  # take 1-3 dimension as the latent
+        spk = self._forward(latent)
+        return spk, latent
+    
+    def _lorenz(self, xyz, *, s=10, r=28, b=2.667):
+        """
+        differential of xyz variables in Lorenz attractor
+        """
+        x, y, z = xyz
+        x_dot = s*(y - x)
+        y_dot = r*x - y - x*z
+        z_dot = x*y - b*z
+        return np.array([x_dot, y_dot, z_dot])
     
     def brunel_pattern(self):
         """
         SR, SI, AR, AI
         """
         return
+    def brunel_spk(self, phase, lk):
+        """
+        Latent-driven Poisson spiking patterns to mimic Bruenl 2000 firing patterns,
+        with phases SR, AI, SIf, and SIs
+        """
+        # setup latent, kernels, and inputs
+        time = np.arange(0,self.T)
+        if phase=='SR':
+            latent = 3*np.ones(self.T)
+            k_self_spk = -20*np.exp(-np.arange(lk)/20)
+            C = np.ones(self.N)
+        elif phase=='AI':
+            freq = .1
+            latent = .2*np.sin(time*freq*(2*np.pi))
+            k_self_spk = -1*np.exp(-np.arange(lk)/1)
+            C = np.random.randn(self.N)
+        elif phase=='SIf':        
+            freq = .7
+            latent = 2.*np.sin(time*freq*(2*np.pi))
+            k_self_spk = -1*np.exp(-np.arange(lk)/1)
+            C = np.ones(self.N)
+        elif phase=='SIs': 
+            freq = .1
+            latent = 2*np.sin(time*freq*(2*np.pi))
+            k_self_spk = -1*np.exp(-np.arange(lk)/1)
+            C = np.ones(self.N)
+        
+        # simulate spikes
+        k_self_spk = np.fliplr(k_self_spk[None,:])[0]
+        ut = np.zeros((self.N,self.T))
+        yt = np.zeros((self.N,self.T))
+        for tt in range(lk,self.T):
+            ut[:,tt] = C*latent[tt] + yt[:,tt-lk:tt] @ k_self_spk
+            yt[:,tt] = self.my_network.spiking(self.my_network.nonlinearity(ut[:,tt]))
+        
+        return yt
     
     def stochastic_states(self):
         # GLM-HMM class
