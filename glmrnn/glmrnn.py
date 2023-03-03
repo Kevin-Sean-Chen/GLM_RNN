@@ -37,10 +37,12 @@ class glmrnn:
         self.data = [] 
         self.K = 2 # number of states for state-transitions
         
-    def forward(self, ipt):
+    def forward(self, ipt=None):
         """
         forward simulation of GLM-RNN given parameters
         """
+        if ipt is None:
+            ipt = np.zeros(self.T)
         spk = np.ones((self.N, self.T))
         rt = np.ones((self.N, self.T))
         for tt in range(self.T-1):

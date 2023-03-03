@@ -9,7 +9,7 @@ import numpy as np
 
 class target_spk(object):
     
-    def __init__(self, N, T, d, latent_type, gr):
+    def __init__(self, N, T, d, gr):
         self.N = N
         self.T = T
         self.d = d
@@ -17,21 +17,22 @@ class target_spk(object):
         # self.latent = np.zeros((d,T))
         # self.M = np.random.randn(self.N, self.d)  # loading matrix
         self.my_network = gr  # containing the class for glmrnn settings
+        self.M = np.random.randn(N, d)*1.
         
     def _forward(self, latent):
         """
         forward generation of spiking patterns given latent dynamics
         """
-        if self.d>1:
-            M = np.random.randn(self.N, self.d)*1.
-        elif self.d==1:
-            M = np.random.randn(self.N)*1.
+#        M = np.random.randn(self.N, self.d)*1.
+#        if self.d>1:     
+        if self.d==1:
+            latent = latent[None,:]
         b = 0
         # simulate spikes    
         spk = np.zeros((self.N,self.T))  # spike train
         # print(latent.shape)
         for tt in range(self.T-1): #test
-            spk[:,tt] = self.my_network.spiking(self.my_network.nonlinearity(M @ latent[tt]-b))  # latent-driven spikes
+            spk[:,tt] = self.my_network.spiking(self.my_network.nonlinearity(self.M @ latent[:,tt]-b))  # latent-driven spikes
         return spk
         
     def bistable(self):
@@ -107,8 +108,8 @@ class target_spk(object):
         rt = np.zeros((self.N, self.T))
         timev = np.arange(0,self.T)
         for nn in range(0,self.N):
-            rt[nn,:] = np.exp(-(timev-locs[nn])**2 / (2*bsize**2))
-        spk = self.my_network.spiking(rt)
+            rt[nn,:] = np.exp(-(timev-locs[nn])**2 / (2*bsize**2))*5 + np.random.randn(self.T)*0.1
+        spk = self.my_network.spiking(self.my_network.nonlinearity(rt))
         return spk, rt
     
     def chaotic(self):
@@ -134,18 +135,13 @@ class target_spk(object):
         z_dot = x*y - b*z
         return np.array([x_dot, y_dot, z_dot])
     
-    def brunel_pattern(self):
-        """
-        SR, SI, AR, AI
-        """
-        return
     def brunel_spk(self, phase, lk):
         """
         Latent-driven Poisson spiking patterns to mimic Bruenl 2000 firing patterns,
         with phases SR, AI, SIf, and SIs
         """
         # setup latent, kernels, and inputs
-        time = np.arange(0,self.T)
+        time = np.arange(0,self.T)*self.my_network.dt
         if phase=='SR':
             latent = 3*np.ones(self.T)
             k_self_spk = -20*np.exp(-np.arange(lk)/20)
@@ -168,13 +164,13 @@ class target_spk(object):
         
         # simulate spikes
         k_self_spk = np.fliplr(k_self_spk[None,:])[0]
-        ut = np.zeros((self.N,self.T))
-        yt = np.zeros((self.N,self.T))
+        rt = np.zeros((self.N,self.T))
+        spk = np.zeros((self.N,self.T))
         for tt in range(lk,self.T):
-            ut[:,tt] = C*latent[tt] + yt[:,tt-lk:tt] @ k_self_spk
-            yt[:,tt] = self.my_network.spiking(self.my_network.nonlinearity(ut[:,tt]))
+            rt[:,tt] = C*latent[tt] + spk[:,tt-lk:tt] @ k_self_spk
+            spk[:,tt] = self.my_network.spiking(self.my_network.nonlinearity(rt[:,tt]))
         
-        return yt
+        return spk, rt
     
     def stochastic_states(self):
         # GLM-HMM class
