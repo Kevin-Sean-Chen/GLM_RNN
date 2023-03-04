@@ -32,7 +32,8 @@ class target_spk(object):
         spk = np.zeros((self.N,self.T))  # spike train
         # print(latent.shape)
         for tt in range(self.T-1): #test
-            spk[:,tt] = self.my_network.spiking(self.my_network.nonlinearity(self.M @ latent[:,tt]-b))  # latent-driven spikes
+            spk[:,tt] = self.my_network.spiking(self.my_network.nonlinearity( \
+                       (self.M @ latent[:,tt]).squeeze()-b))  # latent-driven spikes
         return spk
         
     def bistable(self):
@@ -90,12 +91,12 @@ class target_spk(object):
                 wij[ii,jj] = bump(thetas[ii] - thetas[jj])  # connectivity matrix
         return wij
     
-    def oscillation(self, period):
+    def oscillation(self, period=50):
         """
         sine waves given a period
         """
         time = np.arange(0,self.T)
-        latent = np.sin(time/period)
+        latent = 2*np.sin(time/period)
         spk = self._forward(latent)
         return spk, latent
         

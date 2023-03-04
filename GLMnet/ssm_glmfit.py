@@ -38,7 +38,7 @@ true_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations="poisson", tr
 # possible to be both driven!
 
 # input driving conditions
-driven_emission = 1
+driven_emission = 0
 driven_state = 1
 drive_logic = np.min([driven_emission+driven_state,1])
 

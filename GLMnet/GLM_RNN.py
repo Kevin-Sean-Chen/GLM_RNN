@@ -47,7 +47,7 @@ for tt in range(lt-1):
     latent[tt+1] = latent[tt] + dt/tau_l*(vf(latent[tt])) + np.sqrt(dt*sig)*np.random.randn()
 
 ### simply periodic
-#latent = 2*np.sin(time/6)
+latent = 2*np.sin(time/6)
 
 plt.figure()
 plt.plot(time,latent)

@@ -47,7 +47,7 @@ class glmrnn:
         rt = np.ones((self.N, self.T))
         for tt in range(self.T-1):
             lamb = self.W @ rt[:,tt] + self.b + self.U*ipt[tt]
-            spk[:,tt+1] = self.spiking(self.nonlinearity(lamb*self.dt))
+            spk[:,tt] = self.spiking(self.nonlinearity(lamb)*self.dt)
             rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
 #        self.data = (spk,rt,ipt)
         if self.spk_type=='Gaussian':
@@ -129,8 +129,32 @@ class glmrnn:
             # lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
             lp_states = lp_states - logsumexp(lp_states,0)[None,:]  # logP
             onehot = self.state2onehot(state)  # one-hot of true states
-            state_cost = -np.sum(onehot * lp_states)
-            
+            state_cost = -np.sum(onehot * lp_states)        
+            return -ll + state_cost
+        
+    def neg_log_likelihood_wo_input(self, ww, spk, rt, state=None, lamb=0):
+        """
+        Negative log-likelihood calculation without input vector
+        I: parameter vector, spike, rate, input, and regularization
+        O: negative log-likelihood
+        """
+        if state is None:
+            b,W = self.vec2param(ww,ipt=False)
+            ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None]) + eps) \
+                    - self.nonlinearity(W @ rt + b[:,None])*self.dt) \
+                    - lamb*np.linalg.norm(W)
+            return -ll        
+        elif state is not None:
+            b,U,W,ws = self.vec2param(ww, state=True,ipt=True)
+#            ws = ww[-(self.K*self.N):].reshape(self.K, self.N)  #state readout weights
+            ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None])+eps) \
+                    - self.nonlinearity(W @ rt + b[:,None])*self.dt) \
+                    - lamb*np.linalg.norm(W)
+            lp_states = ws @ rt #np.exp(ws @ rt_true) #
+            # lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
+            lp_states = lp_states - logsumexp(lp_states,0)[None,:]  # logP
+            onehot = self.state2onehot(state)  # one-hot of true states
+            state_cost = -np.sum(onehot * lp_states)  
             return -ll + state_cost
            
     def state2onehot(self, states):
@@ -148,16 +172,30 @@ class glmrnn:
         ww = np.concatenate((b.reshape(-1),U.reshape(-1),W.reshape(-1)))
         return ww
     
-    def vec2param(self, ww, state=False):
+    def vec2param(self, ww, state=False, ipt=True):
+        ### baseline vector
         b = ww[:self.N]
-        U = ww[self.N:2*self.N]
-        if state is False:
-            W = ww[2*self.N:].reshape(self.N,self.N)
-            return b,U,W
-        if state is True:
-            W = ww[2*self.N:2*self.N+self.N*self.N].reshape(self.N,self.N)
-            ws = ww[2*self.N+self.N*self.N:].reshape(self.K,self.N)  # state readout
-            return b,U,W,ws
+        ### with input vector
+        if ipt is True:
+            U = ww[self.N:2*self.N]
+            ### without state readout
+            if state is False:
+                W = ww[2*self.N:].reshape(self.N,self.N)
+                return b, U, W
+            ### with state readout
+            if state is True:
+                W = ww[2*self.N:2*self.N+self.N*self.N].reshape(self.N,self.N)
+                ws = ww[2*self.N+self.N*self.N:].reshape(self.K,self.N)  # state readout
+                return b, U, W, ws
+        ### without input vector
+        elif ipt is False:
+            if state is False:
+                W = ww[self.N:].reshape(self.N,self.N)
+                return b, W
+            if state is True:
+                W = ww[self.N:self.N+self.N*self.N].reshape(self.N,self.N)
+                ws = ww[self.N+self.N*self.N:].reshape(self.K,self.N)  # state readout
+                return b, U, W, ws
     
     def fit_single(self, data, lamb=0):
         """
@@ -167,12 +205,21 @@ class glmrnn:
         """
         spk,ipt = data
         rt = self.kernel_filt(spk)
-        dd = self.N**2 + self.N + self.N
-        w_init = np.ones([dd,])*0.1
-        res = sp.optimize.minimize(lambda w: self.neg_log_likelihood(w, \
+        if ipt is None:
+            dd = self.N**2 + self.N
+            w_init = np.ones([dd,])*0.
+            res = sp.optimize.minimize(lambda w: self.neg_log_likelihood_wo_input(w, \
+                        spk, rt, None, lamb), w_init, method='L-BFGS-B')
+            w_map = res.x
+            self.b, self.W = self.vec2param(w_map, ipt=False)
+            self.U *= 0
+        elif ipt is not None: 
+            dd = self.N**2 + self.N + self.N
+            w_init = np.ones([dd,])*0.
+            res = sp.optimize.minimize(lambda w: self.neg_log_likelihood(w, \
                         spk, rt, ipt, None, lamb), w_init, method='L-BFGS-B')
-        w_map = res.x
-        self.b, self.U, self.W = self.vec2param(w_map)
+            w_map = res.x
+            self.b, self.U, self.W = self.vec2param(w_map)
         
         return res.fun, res.success
     
@@ -232,17 +279,30 @@ class glmrnn:
         summing over list for log-marginal calculation
         """
         ll = 0
-        if state is None:
-            for spk,ipt in zip(spks, ipts):
-                rt = self.kernel_filt(spk.T)
-                lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt)
-                ll += np.sum(lli)
-        else:
-            for spk,ipt,stt in zip(spks, ipts, state):
-                rt = self.kernel_filt(spk.T)
-                lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt, stt)
-                ll += np.sum(lli)
-        return ll
+        if ipts[0] is None:
+            if state is None:
+                for spk,ipt in zip(spks, ipts):
+                    rt = self.kernel_filt(spk.T)
+                    lli = -self.neg_log_likelihood_wo_input(ww, spk.T, rt)
+                    ll += np.sum(lli)
+            else:
+                for spk,ipt,stt in zip(spks, ipts, state):
+                    rt = self.kernel_filt(spk.T)
+                    lli = -self.neg_log_likelihood_wo_input(ww, spk.T, rt, stt)
+                    ll += np.sum(lli)
+            return ll
+        elif ipts[0] is not None:
+            if state is None:
+                for spk,ipt in zip(spks, ipts):
+                    rt = self.kernel_filt(spk.T)
+                    lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt)
+                    ll += np.sum(lli)
+            else:
+                for spk,ipt,stt in zip(spks, ipts, state):
+                    rt = self.kernel_filt(spk.T)
+                    lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt, stt)
+                    ll += np.sum(lli)
+            return ll
     
     def fit_batch_sp(self, data, lamb=0):
         """
@@ -271,7 +331,11 @@ class glmrnn:
         optimizer = dict(adam=adam, bfgs=bfgs, rmsprop=rmsprop,
                          sgd=sgd)[optimizer]
         l_spk, l_ut = data
-        params = np.ones(self.N**2 + self.N*2)
+        if l_ut[0] is None:
+            params = np.ones(self.N**2 + self.N)
+        elif l_ut[0] is not None:
+            params = np.ones(self.N**2 + self.N*2)
+        
         def _objective(params, itr):
             obj = self.log_marginal(params, l_spk, l_ut)
             return -obj
@@ -280,7 +344,11 @@ class glmrnn:
                                 params,
                                 num_iters=num_iters,
                                 **kwargs)
-        self.b, self.U, self.W = self.vec2param(params)
+        if l_ut[0] is None:
+            self.b, self.W = self.vec2param(params, state=False, ipt=False)
+            self.U *= 0
+        elif l_ut[0] is not None:
+            self.b, self.U, self.W = self.vec2param(params)
         
     #####
     # IDEA: with 'weight' parameter normaly use in ssm training, develop an algorithm for GLM-RNN,
@@ -295,7 +363,10 @@ class glmrnn:
                          sgd=sgd)[optimizer]
         l_spk, l_ut, l_state = data
         self.K = k_states#np.max(l_state[0]) + 1  # number of states
-        params = np.ones(self.N**2 + self.N*2 + self.N*self.K)
+        if l_ut[0] is None:
+            params = np.ones(self.N**2 + self.N + self.N*self.K)
+        elif l_ut[0] is not None:
+            params = np.ones(self.N**2 + self.N*2 + self.N*self.K)
         def _objective(params, itr):
             obj = self.log_marginal(params, l_spk, l_ut, l_state)
             return -obj
@@ -304,7 +375,11 @@ class glmrnn:
                                 params,
                                 num_iters=num_iters,
                                 **kwargs)
-        self.b, self.U, self.W, self.ws = self.vec2param(params,True)
+        if l_ut[0] is None:
+            self.b, self.W, self.ws = self.vec2param(params,state=True, ipt=False)
+            self.U *= 0
+        elif l_ut[0] is not None:
+            self.b, self.U, self.W, self.ws = self.vec2param(params,state=True, ipt=True)
 #        self.ws = params[(self.N**2 + self.N*2):].reshape(self.K,self.N)  # state x neurons
         
         

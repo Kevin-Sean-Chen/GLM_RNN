@@ -29,10 +29,10 @@ matplotlib.rc('xtick', labelsize=30)
 matplotlib.rc('ytick', labelsize=30)
 
 # %% setup network parameters
-N = 20
+N = 10
 T = 1000
 dt = 0.1
-tau = 3
+tau = 2
 ### setup network
 my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
 ### setup target spike pattern
@@ -40,25 +40,45 @@ d = 1  # latent dimension
 my_target = target_spk(N, T, d, my_glmrnn)
 
 # %% produce target spikes
-targ_spk, targ_latent = my_target.sequence(80)
+### bistable, oscillation, chaotic, sequence, line_attractor, brunel_spk
+targ_spk, targ_latent = my_target.sequence(50)
 plt.figure()
 plt.imshow(targ_spk, aspect='auto')
 
+# %% test with random input
+#input sequence
+num_sess = 10 # number of example sessions
+input_dim = 1
+inpts = np.sin(2*np.pi*np.arange(T)/600)[:,None]*.5 +\
+        np.cos(2*np.pi*np.arange(T)/300)[:,None]*1. +\
+        .1*npr.randn(T,input_dim)\
+        + np.linspace(-2,2,T)[:,None]
+
+inpts = np.repeat(inpts[None,:,:], num_sess, axis=0)
+inpts = list(inpts) #convert inpts to correct format
+
+###
+# test with 'clock' signal for autonomous system
+###
 # %% generate training sets
 num_sess = 10
 true_latents, true_spikes, true_ipt = [], [], []
 for sess in range(num_sess):
-    true_y, true_z = my_target.sequence(80)  # maybe fix this to pass latent type as string~
+    true_y, true_z = my_target.sequence(50)  # maybe fix this to pass latent type as string~
+    
+    true_spikes.append(true_y.T)
 #    true_latents.append(true_z[:,None])
     true_latents.append(true_z)
-    true_spikes.append(true_y.T)
+    
 #    true_ipt.append(true_z[:,None])
-    true_ipt.append(np.zeros(T))   # fix negLL iterations when there is no input vector!
+#    true_ipt.append(None)#
+#    true_ipt.append(np.zeros(T))   # fix negLL iterations when there is no input vector!
+    true_ipt.append(inpts[sess])
     
 # %% inference
 iid = 1
 data = (true_spikes[iid].T, true_ipt[iid])
-my_glmrnn.fit_single(data,lamb=1)
+my_glmrnn.fit_single(data,lamb=0)
 
 # %%
 ii = 1
