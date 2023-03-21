@@ -269,3 +269,59 @@ for ss in range(N):
     p_s[ss] = np.exp(s2[ss]*theta[ss]*beta)/(2*np.cosh(theta[ss]*beta))
 print(p_s)
 print(np.prod(p_s))
+
+# %% small circuit with WTA feedback states
+###############################################################################
+def WTA(ws, x):
+    """
+    ws: K x N
+    xt: N x 1
+    return: int as the argmax state
+    """
+    es = np.exp(ws.T @ x)
+    ps = es / np.sum(es)
+#    k = np.random.choice(,ps)  # probablistic choice, can try argmax here
+    k = np.argmax(ps)
+    return int(k)
+
+def NL(x):
+    nl = np.log(1+np.exp(x))
+#    nl = 1/(1+np.exp(x))
+    return nl
+
+def spiking(x):
+    return np.random.poisson(x)
+
+### temporal
+T = 1000
+dt = 0.1
+tau = 1
+lt = len(np.arange(0,T,dt))
+
+### structural
+N = 20
+K = 2
+ws = np.random.randn(N,K)
+temp = np.random.randn(N,N)
+uu,ss,vv = np.linalg.svd(temp)
+us = np.random.randn(N,K)*.1
+us = uu[:,:2]
+ws = uu[:,:K] #vv[:2,:].T
+#eps = vv[:,:K]
+eps = ws*1 #np.random.randn(N,K)*.21
+J = np.random.randn(N,N)*.1 + (eps @ eps.T)*.3 + np.outer(eps[:,0],eps[:,1])*.1
+b = np.random.randn(N)*0.1
+rt = np.zeros((N,lt))
+st = rt*1
+statt = np.zeros(lt)
+for tt in range(lt-1):
+    rt[:,tt+1] = rt[:,tt] + dt/tau*(-rt[:,tt] + st[:,tt])  # synaptic filter
+    statt[tt] = WTA(ws,rt[:,tt])  # state
+    lamb = NL( J @ rt[:,tt] + b + 1*us[:,int(statt[tt])] )  # spike rate
+    st[:,tt+1] = spiking(lamb*dt)  # Poisson spikes
+    
+plt.figure()
+plt.imshow(rt,aspect='auto')
+plt.figure()
+plt.plot(statt)
+### try inference for this model... ###
