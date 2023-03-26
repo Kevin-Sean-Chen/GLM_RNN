@@ -53,10 +53,10 @@ def phi(x):
 # %% stochastic state network
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # %% parameters
-N = 100
+N = 10
 p = 2
 c = 0.1
-A = 1.
+A = 3.
 tau = 2
 sig = 0.0
 qf, qg, xf, xg = 0.65, 0.65, 1.75, 1.75
@@ -299,7 +299,7 @@ tau = 1
 lt = len(np.arange(0,T,dt))
 
 ### structural
-N = 20
+N = 10
 K = 2
 ws = np.random.randn(N,K)
 temp = np.random.randn(N,N)
@@ -325,3 +325,88 @@ plt.imshow(rt,aspect='auto')
 plt.figure()
 plt.plot(statt)
 ### try inference for this model... ###
+
+# %% Simply testing to produce HMM-like RNN dynamics
+###############################################################################
+N = 10
+tau = 2
+tau_eps = 5
+eps_ = 0.
+tau_eps = 10
+sig_eps = .65*1
+
+T = 500
+dt = 0.1
+time = np.arange(0,T,dt)
+lt = len(time)
+p = 2  # three states
+etas = np.random.randn(N,p)*1 #w_map.reshape(N,p)#
+Js = etas @ etas.T #phi(etas) @ phi(etas.T)#
+etas_ = etas[:,np.append(np.arange(1,p),0)]
+Jf = etas @ etas_.T #phi(etas) @ phi(etas_.T) #
+ut = np.zeros((N,lt))
+#ept = np.zeros(lt)
+ovl = np.zeros((p,lt))
+spk = np.zeros((N,lt))
+def phi(x):
+    nl = 10/(1+np.exp(-x))
+#    nl = np.log(1+np.exp(x))
+    return nl
+def spiking(x):
+    spk = np.random.poisson(x)
+    return spk
+
+for tt in range(lt-1):
+    ### common rate RNN form
+#    ut[:,tt+1] = ut[:,tt] + dt/tau*( -ut[:,tt] + Js @ phi(ut[:,tt]) \
+#                  + ept[tt]*Jf @ phi(ut[:,tt]) )\
+#                  + np.sqrt(2*sig**2*tau*dt)*np.random.randn(N)
+    
+    ### test with low-rank noise addition
+#    Jff = (etas+ept[tt]) @ (etas_.T+0*ept[tt])
+#    ut[:,tt+1] = ut[:,tt] + dt/tau*( -ut[:,tt] + Js @ phi(ut[:,tt]) \
+#                  + Jff @ phi(ut[:,tt]) )\
+#                  + np.sqrt(2*sig**2*tau*dt)*np.random.randn(N)
+                  
+    ### test with GLM spiking form
+    ut[:,tt+1] = ut[:,tt] + dt/tau*( -ut[:,tt] + spk[:,tt] )
+    lamb = phi( Js@ut[:,tt] + ept[tt]*Jf@ut[:,tt])
+    spk[:,tt+1] = spiking(lamb*dt)
+    
+    ### recording overlap and synaptic noise
+#    ept[tt+1] = ept[tt] + dt/tau_eps*(-ept[tt] + eps_) \
+#                + np.sqrt(2*sig_eps**2*tau_eps*dt)*np.random.randn()
+    ovl[:,tt+1] = etas.T @ phi(ut[:,tt]) / \
+                  np.sqrt(np.linalg.norm(etas,axis=0)*np.linalg.norm(phi(ut[:,tt])))
+
+plt.figure()
+plt.imshow(ut, aspect='auto')
+plt.figure()
+plt.subplot(211)
+plt.plot(ovl.T)
+plt.subplot(212)
+plt.plot(ept,'k--')
+
+###
+# generalized to GLM settings
+# ... pretend noise GP known, infer connections to prove for M step
+# learning rules for GP noise and nonlinearity or weights
+# serve as contextual subnetwork for co-training
+###
+
+# %%
+def nll_seq(ww, spk, rt, dt, ept, f=phi, lamb=0):
+    etas = ww.reshape(N,p)
+    Js = etas @ etas.T
+    etas_ = etas[:,np.append(np.arange(1,p),0)]
+    Jf = etas @ etas_.T
+    temp = Js@rt + Jf@rt*ept[None,:]
+    ll = np.sum(spk * np.log(f(temp)) - f(temp)*dt)
+    return -ll
+
+dd = N*p
+w_init = np.ones([dd,])*0.1  #Wij.reshape(-1)#
+res = sp.optimize.minimize(lambda w: nll_seq(w, spk,ut,dt,ept,phi, 0.),w_init,method='L-BFGS-B')
+w_map = res.x
+print(res.fun)
+print(res.success)
