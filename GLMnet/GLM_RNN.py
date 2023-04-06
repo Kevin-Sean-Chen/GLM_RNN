@@ -26,7 +26,7 @@ matplotlib.rc('ytick', labelsize=30)
 ###
 # %% network and time length settings
 N = 10  # neurons
-T = 200  # time
+T = 100  # time
 dt = 0.1
 time = np.arange(0,T,dt)
 lt = len(time)
@@ -54,18 +54,19 @@ plt.plot(time,latent)
 
 # %% spiking process
 # loading for latent
-M = np.random.randn(N)*1.  # N by latent D
+Mm = np.random.randn(N)*.1  # N by latent D
+M = np.random.randn(N)*1
 #M = np.ones(N)
 b = 0  # offiset for LDS
 
 # used for ground-truth network parameters
-J = np.random.randn(N,N)*20.
+J = np.random.randn(N,N)*1
 randM = np.random.randn(N,N)
 rank = 2
 UU,SS,VV = np.linalg.svd(randM)
 v1, v2 = UU[:,:rank], VV[:rank,:]
 v1, v2 = np.random.randn(N), np.random.randn(N)
-#J = (v1 @ v1.T + v2.T @ v2)*1 + J*0 + 0*v1@v2
+J = (v1 @ v1.T + v2.T @ v2)*.1 + J*1 + .1*v1@v2
 #np.fill_diagonal(J, -2*np.ones(N))
 
 # nonlinear function parameters
@@ -125,9 +126,11 @@ def negLL(ww, spk, rt, dt, f=np.exp, lamb=0):
     W = ww[N:].reshape(N,N)
 #    W = ww.reshape(N,N)
     # poisson log likelihood
-    ll = np.sum(spk * np.log(f(W @ phi(rt) + b[:,None])) - f(W @ phi(rt) + b[:,None])*dt) \
-            - lamb*np.linalg.norm(W) \
-            - lamb*(W.T @ W).sum()
+    cue = np.arange(0,lt)/lt*3 #Mm[:,None]*latent  # random projection of the latent
+    ll = np.sum(spk * np.log(f(W @ phi(rt) + b[:,None]+cue)) - f(W @ phi(rt) + b[:,None]+cue)*dt) \
+            - lamb*np.linalg.norm(W)*0 \
+            - lamb*(W.T @ W).sum()*0 \
+            - lamb*(np.linalg.norm(np.diag(W)-1))
     
     # neg-binomial log-likelihood
 #    rnb = 0.1
@@ -138,7 +141,7 @@ def negLL(ww, spk, rt, dt, f=np.exp, lamb=0):
 
 dd = N*N+N
 w_init = np.zeros([dd,])  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, spk,rt,dt,NL, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
+res = sp.optimize.minimize(lambda w: negLL(w, spk,rt,dt,NL, 1.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_map = res.x
 print(res.fun)
 print(res.success)
@@ -157,11 +160,15 @@ def negLL_lr(ww, spk, rt, latent, dt, f=np.exp, lamb=0):
     latent_loss = -np.sum((latent - Nv@phi(rt))**2)*.5
     spk_loss = np.sum(spk * np.log(f(Mv[:,None] * phi(rt) + b[:,None])) - f(Mv[:,None] * phi(rt) + b[:,None])*dt)
 #    spk_loss = np.sum(spk * np.log(f(Mv[:,None] * latent[None,:])) - f(Mv[:,None] * latent[None,:])*dt)
-    ll = latent_loss + spk_loss
+    ll = latent_loss*0. + spk_loss
+    
+#    W = np.outer(Mv, Nv)
+#    ll = np.sum(spk * np.log(f(W @ phi(rt) + b[:,None])) - f(W @ phi(rt) + b[:,None])*dt)
+    
     return -ll
 
 dd = N+N+N
-w_init = np.zeros([dd,])  #Wij.reshape(-1)#
+w_init = np.zeros([dd,])-0.1  #Wij.reshape(-1)#
 res = sp.optimize.minimize(lambda w: negLL_lr(w, spk,rt,latent,dt,NL, 0.),w_init,method='L-BFGS-B')#,tol=1e-5)
 w_lr = res.x
 print(res.fun)
@@ -184,8 +191,9 @@ Wrec = w_map[N:].reshape(N,N)*1.
 # %% simulated given inferred parameters
 spk_rec = np.zeros((N,lt))
 rt_rec = spk_rec*0
+cue = np.arange(0,lt)/lt*3
 for tt in range(lt-1):
-    spk_rec[:,tt] = spiking(NL(Wrec @ phi(rt_rec[:,tt]) + 1*brec + .0*M*latent[tt])*dt)
+    spk_rec[:,tt] = spiking(NL(Wrec @ phi(rt_rec[:,tt]) + 1*brec + 0*M*latent[tt] + cue[tt])*dt)
     rt_rec[:,tt+1] = rt_rec[:,tt] + dt/tau_r*(-rt_rec[:,tt] + spk_rec[:,tt]) 
 
 plt.figure()
@@ -261,3 +269,13 @@ plt.figure()
 plt.imshow(spk_rec,aspect='auto')
 plt.figure()
 plt.imshow(spk,aspect='auto')
+
+# %%
+#######
+# GLN network with K patterns naturally stochasticly switches, but how to control the switch rate?
+# learn a simple latent drive as a cue?
+# and this agrees with hand-tuned cue in f-force?
+#######
+# try rate-circuits, then transfer to GLM
+# try basis function
+# try diagonalized instantaneous spiking couple

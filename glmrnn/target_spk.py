@@ -72,7 +72,7 @@ class target_spk(object):
         for tt in range(self.T-1):
             lamb = W @ rt[:,tt] + b + U*ipt[tt]
             spk[:,tt+1] = self.my_network.spiking(self.my_network.nonlinearity(lamb*self.my_network.dt/self.my_network.dt))
-            rt[:,tt+1] = self.my_network.kernel(rt[:,tt] , spk[:,tt])
+            rt[:,tt+1] = self.my_network.kernel(rt[:,tt] , spk[:,tt]) + np.random.randn(self.N)*0.05
         return spk, ipt
     
     def _bump_matrix(self):
@@ -81,9 +81,9 @@ class target_spk(object):
         """
         thetas = 2*np.pi*np.arange(0,self.N)/self.N
         def bump(theta):
-            A = 1
-            k1 = 1
-            k2 = 0.3
+            A = 5
+            k1 = 1*1
+            k2 = 0.3*1
             return A*np.exp(k1*(np.cos(theta)-1)) - A*np.exp(k2*(np.cos(theta)-1))  # Maxican hat formula
         wij = np.zeros((self.N, self.N))
         for ii in range(self.N):

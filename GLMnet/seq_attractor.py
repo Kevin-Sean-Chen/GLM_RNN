@@ -332,17 +332,18 @@ N = 10
 tau = 2
 tau_eps = 5
 eps_ = 0.
-tau_eps = 10
+tau_eps = 50
 sig_eps = .65*1
 
 T = 500
 dt = 0.1
 time = np.arange(0,T,dt)
 lt = len(time)
-p = 2  # three states
-etas = np.random.randn(N,p)*1 #w_map.reshape(N,p)#
+p = 3  # three states
+etas = w_map.reshape(N,p)#
+#etas = np.random.randn(N,p)*1 #
 Js = etas @ etas.T #phi(etas) @ phi(etas.T)#
-etas_ = etas[:,np.append(np.arange(1,p),0)]
+etas_ = etas*1[:,np.append(np.arange(1,p),0)]
 Jf = etas @ etas_.T #phi(etas) @ phi(etas_.T) #
 ut = np.zeros((N,lt))
 #ept = np.zeros(lt)
@@ -390,8 +391,8 @@ plt.plot(ept,'k--')
 ###
 # generalized to GLM settings
 # ... pretend noise GP known, infer connections to prove for M step
-# learning rules for GP noise and nonlinearity or weights
-# serve as contextual subnetwork for co-training
+# learning rules for GP noise and nonlinearity or weights (this needs variational methods??)
+# serve as contextual subnetwork for co-training (how much more powerful is this!??)
 ###
 
 # %%

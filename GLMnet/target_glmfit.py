@@ -41,7 +41,11 @@ my_target = target_spk(N, T, d, my_glmrnn)
 
 # %% produce target spikes
 ### bistable, oscillation, chaotic, sequence, line_attractor, brunel_spk
-targ_spk, targ_latent = my_target.sequence(50)
+#targ_spk, targ_latent = my_target.sequence(90)
+#targ_spk, targ_latent = my_target.bistable()
+#targ_spk, targ_latent = my_target.oscillation(50)
+targ_spk, targ_latent = my_target.line_attractor(5)
+
 plt.figure()
 plt.imshow(targ_spk, aspect='auto')
 
@@ -64,7 +68,10 @@ inpts = list(inpts) #convert inpts to correct format
 num_sess = 10
 true_latents, true_spikes, true_ipt = [], [], []
 for sess in range(num_sess):
-    true_y, true_z = my_target.sequence(50)  # maybe fix this to pass latent type as string~
+#    true_y, true_z = my_target.bistable() #
+#    true_y, true_z = my_target.sequence(100)  # maybe fix this to pass latent type as string~
+#    true_y, true_z = my_target.oscillation(50)
+    true_y, true_z = my_target.line_attractor(5)
     
     true_spikes.append(true_y.T)
 #    true_latents.append(true_z[:,None])
@@ -81,7 +88,7 @@ data = (true_spikes[iid].T, true_ipt[iid])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 1
+ii = 5
 spk,rt = my_glmrnn.forward(true_ipt[ii])
 plt.figure(figsize=(15,10))
 plt.subplot(121)
