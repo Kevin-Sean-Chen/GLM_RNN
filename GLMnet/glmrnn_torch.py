@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import random
 
+# %%
 class GLMRNN(nn.Module):
     
     def __init__(self,N, T, dt, k, kernel='basis', nl_type='exp', spk_type="bernoulli"):
@@ -343,8 +344,8 @@ inputs, targets, masks, coh_trials = generate_trials(200)
 
 net_size = 50
 deltaT = .2
-my_net = lowrank_RNN(1, net_size,1, 1, deltaT, 1.)  # input_dim, N, r, output_dim, dt, init_std=1.
-#my_net = RNN(1, net_size,1, deltaT, 1.) 
+# my_net = lowrank_RNN(1, net_size,1, 1, deltaT, 1.)  # input_dim, N, r, output_dim, dt, init_std=1.
+my_net = RNN(1, net_size,1, deltaT, 1.) 
 losses = train(my_net, inputs, targets, masks, 100, lr=1e-3)  # you have to find a good learning rate ! (try negative power of 10)
 
 plt.plot(np.arange(len(losses)), losses)
@@ -543,3 +544,65 @@ plt.plot(neg_b, neg_m,'b')
 plt.plot(pos_b, pos_m,'r')
 plt.xlabel('projection on I',fontsize=30)
 plt.ylabel('projection on m',fontsize=30)
+
+
+# %% test with fully observed neural dynamics
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# firt use rate RNN generated pattern, do BPTT, then transfer to GLM
+# if this works start using poisson targets!
+# one more idea is to join fit rate and poisson-ll
+# %%
+gen_net = observed_RNN(1, net_size, deltaT, 1) 
+# Let us run it with some constant input for a duration T=200 steps:
+n_trials = 100
+T = 100
+net_size = 50
+inp = torch.randn(n_trials, T, 1)  # the tensor containing inputs should have a shape (duration x input_dim), even if input_dim is 1.
+init_net = torch.randn(net_size)*1
+# gen_net.J = torch.randn(net_size, net_size)*1.5
+
+x_seq, output_seq = gen_net.forward(inp, initial_state=init_net)  # this effectively runs the simulation
+# rates_seq = torch.sigmoid(x_seq)  # we also retrieve rates easily from the sequence of voltages
+target_rate = output_seq.detach()
+# x_seq = x_seq.detach().squeeze().numpy()  # useful line for detaching the sequences from pytorch gradients (we will see that later)
+# output_seq = output_seq.detach().squeeze().numpy()
+# rates_seq = rates_seq.detach().squeeze().numpy()
+
+# %%
+def train_neural(net, inputs, targets, masks, n_epochs, lr, batch_size=32):
+    n_trials = inputs.shape[0]
+    optimizer = torch.optim.Adam(net.parameters(), lr=lr)  # fancy gradient descent algorithm
+    losses = []
+    
+    for epoch in range(n_epochs):
+        optimizer.zero_grad()
+        random_batch_idx = random.sample(range(n_trials), batch_size)
+        batch = inputs[random_batch_idx]
+        xs, output = net.forward(batch)
+        # rs = torch.sigmoid(xs)  # rate target
+        loss = error_function(output, targets[random_batch_idx], masks[random_batch_idx])
+        loss.backward()  # with this function, pytorch computes the gradient of the loss with respect to all the parameters
+        optimizer.step()  # here it applies a step of gradient descent
+        
+        losses.append(loss.item())
+        print(f'Epoch {epoch}, loss={loss:.3f}')
+        loss.detach_()  # 2 lines for pytorch administration
+        output.detach_()
+        
+    return losses
+
+# %%
+inf_net = observed_RNN(1, net_size, deltaT, 1) 
+masks = torch.ones(n_trials, T+1, net_size)
+losses = train_neural(inf_net, inp, target_rate, masks, 100, lr=1e-1)  # you have to find a good learning rate ! (try negative power of 10)
+
+plt.plot(np.arange(len(losses)), losses)
+plt.title('Learning curve')
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.show()
+
+# %%
+_, outputs_rt = my_net.forward(inp)
+plt.figure()
+plt.imshow(outputs_rt[0,:,:].T.detach().numpy().squeeze(), aspect='auto')

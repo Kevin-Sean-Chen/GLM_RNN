@@ -147,5 +147,69 @@ class lowrank_RNN(nn.Module):
     def clamp(self):
         self.m = torch.clamp(self.m, min=0.0)
     
+# %% readout RNN
+class observed_RNN(nn.Module):
     
+    def __init__(self, input_dim, N, dt, init_std=1.):
+        """
+        Initialize an RNN
+        
+        parameters:
+        input_dim: int
+        N: int
+        r: int
+        output_dim: int
+        dt: float
+        init_std: float, initialization variance for the connectivity matrix
+        """
+        super(observed_RNN, self).__init__()  # pytorch administration line
+        
+        # Setting some internal variables
+        self.input_dim = input_dim
+        self.N = N
+        self.output_dim = N
+        self.dt = dt
+        
+        # Defining the parameters of the network
+        self.J = nn.Parameter(torch.Tensor(N, N))   # connectivity matrix
+        # self.B = nn.Parameter(torch.Tensor(N, input_dim))  # input weights
+        # self.W = nn.Parameter(torch.Tensor(output_dim, N)) # output matrix
+        self.B = torch.randn(N, input_dim)
+        self.W = torch.eye(N)  # identity readout for fully-observed network
+        
+        # Initializing the parameters to some random values
+        with torch.no_grad():  # this is to say that initialization will not be considered when computing the gradient later on
+            self.B.normal_()
+            self.W.normal_(std=1. / np.sqrt(self.N))
+            self.J.normal_(std=init_std / np.sqrt(self.N))
+            
+    def forward(self, inp, initial_state=None):
+        """
+        Run the RNN with input for a batch of several trials
+        
+        parameters:
+        inp: torch tensor of shape (n_trials x duration x input_dim)
+        initial_state: None or torch tensor of shape (input_dim)
+        
+        returns:
+        x_seq: sequence of voltages, torch tensor of shape (n_trials x (duration+1) x net_size)
+        output_seq: torch tensor of shape (n_trials x duration x output_dim)
+        
+        """
+     
+        n_trials = inp.shape[0]
+        T = inp.shape[1]  # duration of the trial
+        x_seq = torch.zeros((n_trials, T + 1, self.N)) # this will contain the sequence of voltage throughout the trial for the whole population
+        # by default the network starts with x_i=0 at time t=0 for all neurons
+        if initial_state is not None:
+            x_seq[0] = initial_state
+        output_seq = torch.zeros((n_trials, T+1, self.N))  # fully readout rate
+        
+        # loop through time
+        for t in range(T):
+            x_seq[:, t+1] = (1 - self.dt) * x_seq[:, t] + self.dt * \
+            (torch.sigmoid(x_seq[:, t]) @ self.J.T  + inp[:, t] @ self.B.T)
+            output_seq[:, t+1] = torch.sigmoid(x_seq[:, t+1]) @ self.W
+        
+        return x_seq, output_seq
     
