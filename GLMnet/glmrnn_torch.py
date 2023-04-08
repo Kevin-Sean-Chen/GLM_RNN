@@ -343,7 +343,8 @@ inputs, targets, masks, coh_trials = generate_trials(200)
 
 net_size = 50
 deltaT = .2
-my_net = RNN(1, net_size, 1, deltaT, 1.)
+my_net = lowrank_RNN(1, net_size,1, 1, deltaT, 1.)  # input_dim, N, r, output_dim, dt, init_std=1.
+#my_net = RNN(1, net_size,1, deltaT, 1.) 
 losses = train(my_net, inputs, targets, masks, 100, lr=1e-3)  # you have to find a good learning rate ! (try negative power of 10)
 
 plt.plot(np.arange(len(losses)), losses)
@@ -421,7 +422,10 @@ plot_neuron_condition_averaged(1, traj_pos, traj_neg, mean_traj_pos, mean_traj_n
 plot_neuron_condition_averaged(20, traj_pos, traj_neg, mean_traj_pos, mean_traj_neg)
 
 # %% Test transfering to Poisson spiking network!
-Jij = my_net.J.detach().numpy().squeeze()  #network
+#Jij = my_net.J.detach().numpy().squeeze()  #network
+J_lr = my_net._mn2J()
+Jij = J_lr.detach().numpy().squeeze()
+
 B = my_net.B.detach().numpy().squeeze()  #input
 W = my_net.W.detach().numpy().squeeze()  #readout
 dt = 0.1#my_net.deltaT
@@ -429,12 +433,13 @@ tau = 5
 r_max = 10
 
 def NL(x):
-#    nl = np.log(1+np.exp(x))
-    nl = r_max/(1+np.exp(-1*x)) + 0
+    nl = np.log(1+np.exp(x)*r_max)
+#    nl = r_max/(1+np.exp(-1*x)) + 0
     return nl
 def spiking(nl):
     spk = np.random.poisson(nl)
     return spk
+
 def glm_forward(inputs,J,B,W):
     """
     start with single trial input, with Tx1 dimension
@@ -452,7 +457,7 @@ def glm_forward(inputs,J,B,W):
     return spk, rt, zt
 
 ### cannot use tanh!!
-ipt = inputs_pos[1,:,:].detach().numpy().squeeze()  # pick one input now
+ipt = inputs_neg[1,:,:].detach().numpy().squeeze()  # pick one input now
 lamb = .1
 spk,rt,zt = glm_forward(ipt, Jij*lamb,B,W*lamb)
 plt.figure()
@@ -493,7 +498,7 @@ def accuracy_glm(net):
 # %% scanning lambda and firing property
 # record performance and spike counts with respect to model settings
 lambs = np.array([0.01, 0.1, 1, 10])
-rmaxs = np.array([1,5,10,50,100])
+rmaxs = np.array([1,5,10,50,100])  #np.array([1,3,9,81,234])
 scan_spk = np.zeros((len(lambs), len(rmaxs)))
 scan_per = scan_spk*0
 n_trials = 100
@@ -520,3 +525,21 @@ plt.xticks(np.arange(len(rmaxs)), rmaxs)
 plt.colorbar()
 plt.xlabel('max firing rate',fontsize=30)
 plt.ylabel('rescale factor',fontsize=30)
+
+# %% projection analysis
+r_max = 20
+ll = 1
+spk_pos,rt_pos, zt_pos = glm_forward_tense(inputs_pos, Jij*lambs[ll], B, W*lambs[ll])
+spk_neg, rt_neg, zt_neg = glm_forward_tense(inputs_neg, Jij*lambs[ll], B, W*lambs[ll])
+b_ = my_net.B.detach().numpy()
+m_ = my_net.n.detach().numpy() #+ my_net.m.detach().numpy()
+pos_b = (rt_pos@b_).squeeze()
+neg_b = (rt_neg@b_).squeeze()
+pos_m = (rt_pos@m_).squeeze()
+neg_m = (rt_pos@m_).squeeze()
+
+plt.figure()
+plt.plot(neg_b, neg_m,'b')
+plt.plot(pos_b, pos_m,'r')
+plt.xlabel('projection on I',fontsize=30)
+plt.ylabel('projection on m',fontsize=30)
