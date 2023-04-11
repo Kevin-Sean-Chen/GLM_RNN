@@ -6,9 +6,10 @@ Created on Thu Apr  6 16:39:06 2023
 """
 
 import numpy as np
-from matplotlib import pyplot as plt
+#from matplotlib import pyplot as plt
 import torch
 import torch.nn as nn
+import random
 
 # %% vanila RNN
 
@@ -172,7 +173,7 @@ class observed_RNN(nn.Module):
         
         # Defining the parameters of the network
         self.J = nn.Parameter(torch.Tensor(N, N))   # connectivity matrix
-        # self.B = nn.Parameter(torch.Tensor(N, input_dim))  # input weights
+#        self.B = nn.Parameter(torch.Tensor(N, input_dim))  # input weights
         # self.W = nn.Parameter(torch.Tensor(output_dim, N)) # output matrix
         self.B = torch.randn(N, input_dim)
         self.W = torch.eye(N)  # identity readout for fully-observed network
@@ -212,4 +213,74 @@ class observed_RNN(nn.Module):
             output_seq[:, t+1] = torch.sigmoid(x_seq[:, t+1]) @ self.W
         
         return x_seq, output_seq
+
+
+# %% generic RNN trainer given class
+class RNNTrainer():
+    def __init__(self, RNN, loss_type, spk_target=None):
+        self.rnn = RNN
+        self.loss_type = loss_type
+        self.spk_target = spk_target
+
+    def train(self, inputs, targets, masks, n_epochs, lr, batch_size=32):
+        n_trials = inputs.shape[0]
+        optimizer = torch.optim.Adam(self.rnn.parameters(), lr=lr)  # fancy gradient descent algorithm
+        losses = []
+        
+        if self.loss_type == 'MES':
+            for epoch in range(n_epochs):
+                optimizer.zero_grad()
+                random_batch_idx = random.sample(range(n_trials), batch_size)
+                batch = inputs[random_batch_idx]
+                _, output = self.rnn.forward(batch)
+                loss = self.error_function(output, targets[random_batch_idx], masks[random_batch_idx])
+                loss.backward()  # with this function, pytorch computes the gradient of the loss with respect to all the parameters
+                optimizer.step()  # here it applies a step of gradient descent
+                
+                losses.append(loss.item())
+                print(f'Epoch {epoch}, loss={loss:.3f}')
+                loss.detach_()  # 2 lines for pytorch administration
+                output.detach_()
+                
+        elif self.loss_type == 'joint':
+            spk_target = self.spk_target
+            loss_fn = nn.PoissonNLLLoss()
+            
+            for epoch in range(n_epochs):
+                optimizer.zero_grad()
+                random_batch_idx = random.sample(range(n_trials), batch_size)
+                batch = inputs[random_batch_idx]
+                _, output = self.rnn.forward(batch)
+                loss = self.error_function(output, targets[random_batch_idx], masks[random_batch_idx]) \
+                       + loss_fn(torch.exp(targets[random_batch_idx]),  spk_target[random_batch_idx]+1e-10)
+#                       + self.ll_loss(spk_target[random_batch_idx], targets[random_batch_idx])
+
+                loss.backward()  # with this function, pytorch computes the gradient of the loss with respect to all the parameters
+                optimizer.step()  # here it applies a step of gradient descent
+                
+                losses.append(loss.item())
+                print(f'Epoch {epoch}, loss={loss:.3f}')
+                loss.detach_()  # 2 lines for pytorch administration
+                output.detach_()
+            
+        return losses
     
+    def error_function(self, outputs, targets, masks):
+        """
+        parameters:
+        outputs: torch tensor of shape (n_trials x duration x output_dim)
+        targets: torch tensor of shape (n_trials x duration x output_dim)
+        mask: torch tensor of shape (n_trials x duration x output_dim)
+        
+        returns: float
+        """
+        return torch.sum(masks * (targets - outputs)**2) / outputs.shape[0]
+    
+    def ll_loss(self, spk, rt):
+        """
+        log-likelihood loss function
+        """
+        eps = 1e-20
+        ll = torch.sum(spk * torch.log((rt)+eps) - (rt)*self.rnn.dt)
+        # ll = torch.sum(spk * torch.log(self.nonlinearity(self.W @ rt + self.B[:,None])) - self.nonlinearity(self.W @ rt + self.B[:,None])*self.dt)
+        return -ll

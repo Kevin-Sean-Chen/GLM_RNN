@@ -51,9 +51,9 @@ class RSNN(nn.Module):# , torch.autograd.Function):
         # Defining the parameters of the network
         self.J = nn.Parameter(torch.Tensor(net_dim, net_dim))     # connectivity matrix
 #        self.B = nn.Parameter(torch.Tensor(net_dim, input_dim))   # input weights
-#        self.W = nn.Parameter(torch.Tensor(output_dim, net_dim))  # output matrix
+        self.W = nn.Parameter(torch.Tensor(output_dim, net_dim))  # output matrix
         self.B = torch.Tensor(net_dim,input_dim)  # I/O without training constraint
-        self.W = torch.Tensor(output_dim, net_dim)
+#        self.W = torch.Tensor(output_dim, net_dim)
 #        self.W = torch.ones(output_dim, net_dim)
         
         # Initializing the parameters to some random values
@@ -223,7 +223,7 @@ def error_function(outputs, targets, masks):
     return torch.sum(masks * (targets - outputs)**2) / outputs.shape[0]
 
 # %% test run
-net_size = 100
+net_size = 50
 dt = .1
 tau = 1
 spk_param = 0.4, 1, 0.3  # threshold, temperature, damp
@@ -247,8 +247,8 @@ print(v_seq.shape)
 print(output_seq.shape)
 
 # %% test back-prop
-n_epochs = 10
-lr = 1e-3
+n_epochs = 100
+lr = 1e-2
 batch_size = 32
 n_trials = inputs.shape[0]
 optimizer = torch.optim.Adam(my_net.parameters(), lr=lr)  # fancy gradient descent algorithm

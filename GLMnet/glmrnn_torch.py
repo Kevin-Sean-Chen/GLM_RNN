@@ -12,6 +12,12 @@ import torch
 import torch.nn as nn
 import random
 
+from glmrnn.rnn_torch import RNN, lowrank_RNN, observed_RNN
+
+import matplotlib 
+matplotlib.rc('xtick', labelsize=30) 
+matplotlib.rc('ytick', labelsize=30) 
+
 # %%
 class GLMRNN(nn.Module):
     
@@ -161,11 +167,11 @@ def mse_loss(outputs, targets):
     return torch.sum( (targets - outputs)**2) / outputs.shape[0]
 
 # %% testing
-N = 10
+N = 20
 T = 1000
 dt = 0.1
 k = 10
-my_glmrnn = GLMRNN(N, T, dt, k)
+my_glmrnn = GLMRNN(N, T, dt, k,  nl_type='sigmoid')
 st, gt, xt = my_glmrnn.forward()
 latent = my_glmrnn.generate_latent()
 
@@ -423,19 +429,19 @@ plot_neuron_condition_averaged(1, traj_pos, traj_neg, mean_traj_pos, mean_traj_n
 plot_neuron_condition_averaged(20, traj_pos, traj_neg, mean_traj_pos, mean_traj_neg)
 
 # %% Test transfering to Poisson spiking network!
-#Jij = my_net.J.detach().numpy().squeeze()  #network
-J_lr = my_net._mn2J()
-Jij = J_lr.detach().numpy().squeeze()
+Jij = my_net.J.detach().numpy().squeeze()  #network
+#J_lr = my_net._mn2J()
+#Jij = J_lr.detach().numpy().squeeze()
 
 B = my_net.B.detach().numpy().squeeze()  #input
 W = my_net.W.detach().numpy().squeeze()  #readout
-dt = 0.1#my_net.deltaT
-tau = 5
+dt = my_net.deltaT
+tau = 1
 r_max = 10
 
 def NL(x):
-    nl = np.log(1+np.exp(x)*r_max)
-#    nl = r_max/(1+np.exp(-1*x)) + 0
+#    nl = np.log(1+np.exp(x)*r_max)
+    nl = r_max/(1+np.exp(-1*x)) + 0
     return nl
 def spiking(nl):
     spk = np.random.poisson(nl)
@@ -552,12 +558,12 @@ plt.ylabel('projection on m',fontsize=30)
 # if this works start using poisson targets!
 # one more idea is to join fit rate and poisson-ll
 # %%
-gen_net = observed_RNN(1, net_size, deltaT, 1) 
+gen_net = observed_RNN(1, net_size, deltaT, .5) 
 # Let us run it with some constant input for a duration T=200 steps:
 n_trials = 100
 T = 100
 net_size = 50
-inp = torch.randn(n_trials, T, 1)  # the tensor containing inputs should have a shape (duration x input_dim), even if input_dim is 1.
+inp = torch.randn(n_trials, T, 1)*2  # the tensor containing inputs should have a shape (duration x input_dim), even if input_dim is 1.
 init_net = torch.randn(net_size)*1
 # gen_net.J = torch.randn(net_size, net_size)*1.5
 
@@ -594,7 +600,7 @@ def train_neural(net, inputs, targets, masks, n_epochs, lr, batch_size=32):
 # %%
 inf_net = observed_RNN(1, net_size, deltaT, 1) 
 masks = torch.ones(n_trials, T+1, net_size)
-losses = train_neural(inf_net, inp, target_rate, masks, 100, lr=1e-1)  # you have to find a good learning rate ! (try negative power of 10)
+losses = train_neural(inf_net, inp, target_rate, masks, 100, lr=1e-1,batch_size=2)  # you have to find a good learning rate ! (try negative power of 10)
 
 plt.plot(np.arange(len(losses)), losses)
 plt.title('Learning curve')
@@ -603,6 +609,27 @@ plt.ylabel('loss')
 plt.show()
 
 # %%
-_, outputs_rt = my_net.forward(inp)
+trid = 10
+_, outputs_rt = inf_net.forward(inp)
 plt.figure()
-plt.imshow(outputs_rt[0,:,:].T.detach().numpy().squeeze(), aspect='auto')
+plt.imshow(outputs_rt[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
+plt.figure()
+plt.imshow(output_seq[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
+plt.figure()
+Jtrue = gen_net.J.detach().numpy()
+Jinf = inf_net.J.detach().numpy()
+plt.plot(Jtrue,Jinf,'ko', alpha=0.2);
+
+# %% try GLM!!
+ipt = inp[trid,:,:].detach().numpy()  # pick one input now
+lamb = 1
+r_max = 20
+Jij = inf_net.J.detach().numpy().squeeze()  #network, learned from rate
+B = inf_net.B.detach().numpy().squeeze()  #input
+W = np.ones(net_size)#inf_net.W.detach().numpy().squeeze()  #readout
+spk,rt,zt = glm_forward(ipt, Jij*lamb,B,W*lamb)
+plt.figure()
+plt.imshow(spk, aspect='auto')
+plt.figure()
+plt.imshow(output_seq[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
+

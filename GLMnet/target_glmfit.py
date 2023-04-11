@@ -30,7 +30,7 @@ matplotlib.rc('ytick', labelsize=30)
 
 # %% setup network parameters
 N = 10
-T = 1000
+T = 200
 dt = 0.1
 tau = 2
 ### setup network
@@ -41,10 +41,10 @@ my_target = target_spk(N, T, d, my_glmrnn)
 
 # %% produce target spikes
 ### bistable, oscillation, chaotic, sequence, line_attractor, brunel_spk
-#targ_spk, targ_latent = my_target.sequence(90)
+targ_spk, targ_latent = my_target.sequence(50)
 #targ_spk, targ_latent = my_target.bistable()
 #targ_spk, targ_latent = my_target.oscillation(50)
-targ_spk, targ_latent = my_target.line_attractor(5)
+#targ_spk, targ_latent = my_target.line_attractor(5)
 
 plt.figure()
 plt.imshow(targ_spk, aspect='auto')
@@ -53,12 +53,12 @@ plt.imshow(targ_spk, aspect='auto')
 #input sequence
 num_sess = 10 # number of example sessions
 input_dim = 1
-inpts = np.sin(2*np.pi*np.arange(T)/600)[:,None]*.5 +\
+inpts_ = np.sin(2*np.pi*np.arange(T)/600)[:,None]*.5 +\
         np.cos(2*np.pi*np.arange(T)/300)[:,None]*1. +\
         .1*npr.randn(T,input_dim)\
         + np.linspace(-2,2,T)[:,None]
 
-inpts = np.repeat(inpts[None,:,:], num_sess, axis=0)
+inpts = np.repeat(inpts_[None,:,:], num_sess, axis=0)
 inpts = list(inpts) #convert inpts to correct format
 
 ###
@@ -109,3 +109,45 @@ my_glmrnn.fit_glm(datas)  # using ssm gradient
 datas = (true_spikes, true_ipt, true_latents)
 my_glmrnn.fit_glm_states(datas,2)
 ###
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %% use rate RNN and Poisson log-likelihood
+from glmrnn.rnn_torch import RNN, lowrank_RNN, observed_RNN, RNNTrainer
+import torch
+
+# %% setup target
+N = 50
+T = 200
+dt = 0.1
+tau = 2
+my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
+d = 1  # latent dimension
+my_target = target_spk(N, T, d, my_glmrnn)
+
+num_sess = 100
+true_latents, true_spikes, true_ipt = [], [], []
+inpts = np.repeat(inpts_[None,:-1,:], num_sess, axis=0)
+inpts = list(inpts)
+for sess in range(num_sess):
+    true_y, true_z = my_target.sequence(50)  # maybe fix this to pass latent type as string~
+    true_spikes.append(true_y.T)
+    true_latents.append(true_z)
+    true_ipt.append(inpts[sess])
+
+# %% tensorize
+target_spikes = torch.Tensor(np.array(true_spikes))
+target_rates = torch.Tensor(np.transpose(np.array(true_latents),axes=(0, 2, 1)))
+inp = torch.Tensor(np.array(true_ipt))
+
+# %% training
+inf_net = observed_RNN(1, N, dt, 1) 
+masks = torch.ones(num_sess, T+0, N)
+trainer = RNNTrainer(inf_net, 'joint', spk_target=target_spikes)
+losses = trainer.train(inp, target_rates, masks, n_epochs=100, lr=1e-3, batch_size=5)
+### still need to fix poisson ll!
+
+plt.plot(np.arange(len(losses)), losses)
+plt.title('Learning curve')
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.show()
