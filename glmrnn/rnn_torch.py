@@ -173,15 +173,16 @@ class observed_RNN(nn.Module):
         
         # Defining the parameters of the network
         self.J = nn.Parameter(torch.Tensor(N, N))   # connectivity matrix
-#        self.B = nn.Parameter(torch.Tensor(N, input_dim))  # input weights
+        self.B = nn.Parameter(torch.Tensor(N, input_dim))  # input weights
         # self.W = nn.Parameter(torch.Tensor(output_dim, N)) # output matrix
-        self.B = torch.randn(N, input_dim)
+#        self.B = torch.randn(N, input_dim)
         self.W = torch.eye(N)  # identity readout for fully-observed network
         
         # Initializing the parameters to some random values
         with torch.no_grad():  # this is to say that initialization will not be considered when computing the gradient later on
             self.B.normal_()
-            self.W.normal_(std=1. / np.sqrt(self.N))
+#            self.W.normal_(std=1. / np.sqrt(self.N))
+            self.W = torch.eye(N)
             self.J.normal_(std=init_std / np.sqrt(self.N))
             
     def forward(self, inp, initial_state=None):
@@ -214,7 +215,6 @@ class observed_RNN(nn.Module):
         
         return x_seq, output_seq
 
-
 # %% generic RNN trainer given class
 class RNNTrainer():
     def __init__(self, RNN, loss_type, spk_target=None):
@@ -227,7 +227,7 @@ class RNNTrainer():
         optimizer = torch.optim.Adam(self.rnn.parameters(), lr=lr)  # fancy gradient descent algorithm
         losses = []
         
-        if self.loss_type == 'MES':
+        if self.loss_type == 'MSE':
             for epoch in range(n_epochs):
                 optimizer.zero_grad()
                 random_batch_idx = random.sample(range(n_trials), batch_size)
@@ -252,7 +252,7 @@ class RNNTrainer():
                 batch = inputs[random_batch_idx]
                 _, output = self.rnn.forward(batch)
                 loss = self.error_function(output, targets[random_batch_idx], masks[random_batch_idx]) \
-                       + loss_fn(torch.exp(targets[random_batch_idx]),  spk_target[random_batch_idx]+1e-10)
+                       + loss_fn((targets[random_batch_idx]),  spk_target[random_batch_idx]+1e-10)
 #                       + self.ll_loss(spk_target[random_batch_idx], targets[random_batch_idx])
 
                 loss.backward()  # with this function, pytorch computes the gradient of the loss with respect to all the parameters

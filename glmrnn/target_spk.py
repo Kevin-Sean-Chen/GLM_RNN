@@ -41,7 +41,7 @@ class target_spk(object):
         Create bi-stable latent from a noise double-well particle
         """
         c = 0.  # posision
-        sig = .5  # noise
+        sig = 1.  # noise
         tau_l = 2  # time scale
         dt = 0.1  # time step
         def vf(x):
