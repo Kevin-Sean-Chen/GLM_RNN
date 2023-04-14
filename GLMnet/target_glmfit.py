@@ -165,13 +165,13 @@ plt.figure()
 plt.imshow(target_rates[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
 
 # %% generative with spikes
-lamb = 10
+lamb = 20
 gen_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
 gen_glmrnn.W = inf_net.J.detach().numpy()*lamb
-gen_glmrnn.U = inf_net.B.detach().numpy().squeeze()*lamb*1
-gen_glmrnn.b = gen_glmrnn.b*0
+gen_glmrnn.U = inf_net.B.detach().numpy().squeeze()*lamb
+gen_glmrnn.b = gen_glmrnn.b*lamb
 gen_glmrnn.lamb_max = 10
-ii = 5
+ii = 1
 spk,rt = gen_glmrnn.forward(inp[ii].detach().numpy())
 plt.figure(figsize=(15,10))
 plt.subplot(121)

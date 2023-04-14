@@ -24,7 +24,7 @@ def spiking(p_spk, spk_past):
     rand = np.random.rand(N)
     spk = np.zeros(N)
     spk[p_spk>rand] = 1  # probablistic firing
-    spk[spk_past==1] = 0  # refractoriness
+#    spk[spk_past==1] = 0  # refractoriness
     return spk
 
 def nonlinearity(x):
@@ -42,8 +42,8 @@ def current(Jij, spk):
     return I
 
 # %% initializations
-T = 10000
-N = 5
+T = 20000
+N = 4
 gamma = 1.  # scaling coupling strength
 Jij = np.random.randn(N,N)*gamma/N**0.5  # coupling matrix
 sigma = np.zeros((N,T))
@@ -59,7 +59,7 @@ plt.imshow(sigma,aspect='auto',cmap='Greys',  interpolation='none')
 # %% Inference
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # %% functions
-eps = 10**-10
+eps = 10**-10*0
 def inv_f(x):
     """
     Stable inverse function of sigmoid nonlinearity
@@ -109,10 +109,10 @@ combinations = list(itertools.product(spins, repeat=n_comb))  # spin combination
 Jinf = Jij*0
 neuron_index = np.arange(0,N)
 dumy = 0
-r_past = combinations[1]#[np.random.randint(N-2)]  # fix one past condition, can late use the frequent one
+r_past = combinations[np.random.randint(N-2)]  # fix one past condition, can late use the frequent one
 
 for ii in range(N):
-    for jj in range(N):
+    for jj in range(N-1):
         temp = sigma[[ii,jj],:]  # selectec i,j pair
         ind_r = [neuron_index[i] for i in range(N) if i!=ii and i!=jj]
         temp_r = sigma[ind_r,:]
@@ -131,7 +131,7 @@ for ii in range(N):
                 n10r = len(pos10r)
                 pos01 = np.where((temp.T == (0,1)).all(axis=1))[0]
                 pos10_01 = np.intersect1d(pos10r-1, pos01)
-                pos10_01r = np.intersect1d(pos10_01, cond_r-0)
+                pos10_01r = np.intersect1d(pos10_01, cond_r)
                 n10_01r = len(pos10_01r)
                 if n10r is not 0:
                     p_1001r = n10_01r / n10r
@@ -141,7 +141,7 @@ for ii in range(N):
                 pos00r = np.intersect1d(pos00, pos_rpast) #cond_r)
                 n00r = len(pos00r)
                 pos00_01 = np.intersect1d(pos00r-1, pos01)
-                pos00_01r = np.intersect1d(pos00_01, cond_r-0)
+                pos00_01r = np.intersect1d(pos00_01, cond_r)
                 n00_01r = len(pos00_01r)
                 if n00r is not 0:
                     p_0001r = n00_01r / n00r
@@ -190,3 +190,47 @@ def objective(beta):
     g_bar = expect_g(beta)
     obj = np.dot(beta, g_bar) - lamb_beta(beta)
     return -obj # do scipy.minimization on this
+
+# %%
+import numpy as np
+
+# Define a transition matrix for a 3-state Markov Chain
+P_true = np.array([[0.7, 0.2, 0.1],
+                   [0.3, 0.5, 0.2],
+                   [0.1, 0.4, 0.5]])
+
+# Generate some synthetic data from the true Markov Chain
+np.random.seed(123)
+T = 1000  # number of time steps
+x_true = np.zeros(T, dtype=int)
+x_true[0] = np.random.choice(3)
+for t in range(1, T):
+    x_true[t] = np.random.choice(3, p=P_true[x_true[t-1]])
+
+# Initialize the estimated transition matrix
+P_est = np.random.rand(3, 3)
+P_est /= np.sum(P_est, axis=1, keepdims=True)  # normalize rows
+
+# Define the objective function (negative log-likelihood)
+def neg_log_likelihood(P, x):
+    log_likelihood = 0
+    for t in range(1, len(x)):
+        log_likelihood += np.log(P[x[t-1], x[t]])
+    return -log_likelihood
+
+# Perform gradient descent to minimize the negative log-likelihood
+lr = 0.1  # learning rate
+for i in range(1000):  # number of iterations
+    # Compute the gradient of the negative log-likelihood
+    grad = np.zeros((3, 3))
+    for t in range(1, T):
+        grad[x_true[t-1], x_true[t]] -= 1 / P_est[x_true[t-1], x_true[t]]
+    # Update the estimated transition matrix
+    P_est -= lr * grad
+    P_est /= np.sum(P_est, axis=1, keepdims=True)  # normalize rows
+
+# Print the true and estimated transition matrices
+print("True transition matrix:")
+print(P_true)
+print("Estimated transition matrix:")
+print(P_est)

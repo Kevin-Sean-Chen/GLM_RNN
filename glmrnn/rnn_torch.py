@@ -217,17 +217,21 @@ class observed_RNN(nn.Module):
 
 # %% generic RNN trainer given class
 class RNNTrainer():
-    def __init__(self, RNN, loss_type, spk_target=None):
+    def __init__(self, RNN, loss_type, spk_target=None, st_target=None):
         self.rnn = RNN
         self.loss_type = loss_type
         self.spk_target = spk_target
+        self.st_target = st_target
+        if st_target is not None:
+            K = st_target.shape[-1]  # K target states (st is true state time series trial x T x K)
+            self.wk = nn.Parameter(torch.Tensor(RNN.N, K))
 
     def train(self, inputs, targets, masks, n_epochs, lr, batch_size=32):
         n_trials = inputs.shape[0]
-        optimizer = torch.optim.Adam(self.rnn.parameters(), lr=lr)  # fancy gradient descent algorithm
         losses = []
         
         if self.loss_type == 'MSE':
+            optimizer = torch.optim.Adam(self.rnn.parameters(), lr=lr)  # fancy gradient descent algorithm
             for epoch in range(n_epochs):
                 optimizer.zero_grad()
                 random_batch_idx = random.sample(range(n_trials), batch_size)
@@ -243,6 +247,7 @@ class RNNTrainer():
                 output.detach_()
                 
         elif self.loss_type == 'joint':
+            optimizer = torch.optim.Adam(self.rnn.parameters(), lr=lr)  # fancy gradient descent algorithm
             spk_target = self.spk_target
             loss_fn = nn.PoissonNLLLoss()
             
@@ -254,6 +259,26 @@ class RNNTrainer():
                 loss = self.error_function(output, targets[random_batch_idx], masks[random_batch_idx]) \
                        + loss_fn((targets[random_batch_idx]),  spk_target[random_batch_idx]+1e-10)
 #                       + self.ll_loss(spk_target[random_batch_idx], targets[random_batch_idx])
+
+                loss.backward()  # with this function, pytorch computes the gradient of the loss with respect to all the parameters
+                optimizer.step()  # here it applies a step of gradient descent
+                
+                losses.append(loss.item())
+                print(f'Epoch {epoch}, loss={loss:.3f}')
+                loss.detach_()  # 2 lines for pytorch administration
+                output.detach_()
+                
+        elif self.loss_type == 'state':
+            optimizer = torch.optim.Adam([{'params': self.rnn.parameters()}, {'params': self.wk}], lr=lr)
+            st_target = self.st_target
+            
+            for epoch in range(n_epochs):
+                optimizer.zero_grad()
+                random_batch_idx = random.sample(range(n_trials), batch_size)
+                batch = inputs[random_batch_idx]
+                _, output = self.rnn.forward(batch)
+                loss = self.error_function(output, targets[random_batch_idx], masks[random_batch_idx]) \
+                       + self.state_transition(st_target[random_batch_idx], output)
 
                 loss.backward()  # with this function, pytorch computes the gradient of the loss with respect to all the parameters
                 optimizer.step()  # here it applies a step of gradient descent
@@ -284,3 +309,17 @@ class RNNTrainer():
         ll = torch.sum(spk * torch.log((rt)+eps) - (rt)*self.rnn.dt)
         # ll = torch.sum(spk * torch.log(self.nonlinearity(self.W @ rt + self.B[:,None])) - self.nonlinearity(self.W @ rt + self.B[:,None])*self.dt)
         return -ll
+    
+    def state_transition(self, st, rt):
+        """
+        adding state-transition loss and weights to the objective function
+        st: trial x T x K
+        rt: trial x T x N
+        wk: N x k
+        """
+#        K = st.shape[0]  # k target states (st is true state time series k x T)
+#        self.wk = nn.Parameter(torch.Tensor(self.N, K))  # weights across states 
+        unormed_p = rt @ self.wk
+        logp = unormed_p - torch.logsumexp(unormed_p, dim=2)[:,:,None]
+        loss = - torch.sum(st * logp)
+        return loss

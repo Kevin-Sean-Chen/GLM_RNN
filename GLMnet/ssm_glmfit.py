@@ -205,3 +205,24 @@ plt.title('true latent',fontsize=40)
 plt.subplot(212)
 plt.title('inferred latent',fontsize=40)
 plt.imshow(inferred_states[None,:], aspect="auto")
+
+
+# %% try RNN approach joint with state-transition targets.
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+from glmrnn.rnn_torch import RNN, lowrank_RNN, observed_RNN, RNNTrainer
+import torch
+# %% setup params
+N = num_states*1
+K = obs_dim*1
+T = time_len*1
+dt = 0.1
+
+# %% match type and dims
+target_spikes = np.array(true_spikes)
+#glmrnn.state2onehot
+#inp
+# %% try RNN
+inf_net = observed_RNN(input_dim, N, dt, 1) 
+masks = torch.ones(num_sess, T+0, N)
+trainer = RNNTrainer(inf_net, 'joint', spk_target=target_spikes)
+losses = trainer.train(inp, target_rates, masks, n_epochs=150, lr=1e-1, batch_size=10)
