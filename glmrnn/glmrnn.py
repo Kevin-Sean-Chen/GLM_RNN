@@ -157,11 +157,14 @@ class glmrnn:
             state_cost = -np.sum(onehot * lp_states)  
             return -ll + state_cost
            
-    def state2onehot(self, states):
+    def state2onehot(self, states, K=None):
         """
         state vector to onehot encoding, used for state-constrained likelihood
         """
-        nstate = np.max(states) + 1
+        if K is None:
+            nstate = np.max(states) + 1
+        else:
+            nstate = K
         T = len(states)
         onehot = np.zeros((nstate,T))
         for tt in range(T):

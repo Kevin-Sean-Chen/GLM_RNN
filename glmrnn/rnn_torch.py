@@ -200,7 +200,7 @@ class observed_RNN(nn.Module):
         """
      
         n_trials = inp.shape[0]
-        T = inp.shape[1]  # duration of the trial
+        T = inp.shape[1]-1  # duration of the trial
         x_seq = torch.zeros((n_trials, T + 1, self.N)) # this will contain the sequence of voltage throughout the trial for the whole population
         # by default the network starts with x_i=0 at time t=0 for all neurons
         if initial_state is not None:

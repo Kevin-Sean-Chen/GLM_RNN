@@ -54,8 +54,8 @@ else:
 
 # %%
 #input sequence
-num_sess = 10 # number of example sessions
-time_len = 1000 # time duration of simulation
+num_sess = 50 # number of example sessions
+time_len = 500 # time duration of simulation
 inpts = np.ones((num_sess, time_len, input_dim)) # initialize inpts array
 stim_vals = [-1, -0.5, -0.25, -0.125, -0.0625, 0, 0.0625, 0.125, 0.25, 0.5, 1]
 
@@ -65,8 +65,8 @@ stim_vals = [-1, -0.5, -0.25, -0.125, -0.0625, 0, 0.0625, 0.125, 0.25, 0.5, 1]
 ### random input
 #inpts = np.random.randn(num_sess, num_trials_per_sess, input_dim)
 ### noisy sine input
-inpts = np.sin(2*np.pi*np.arange(time_len)/600)[:,None]*.5 +\
-        np.cos(2*np.pi*np.arange(time_len)/200)[:,None]*1. +\
+inpts = np.sin(2*np.pi*np.arange(time_len)/600)[:,None]*.5*0 +\
+        np.cos(2*np.pi*np.arange(time_len)/200)[:,None]*1.*0 +\
         .1*npr.randn(time_len,input_dim)
 
 inpts = np.repeat(inpts[None,:,:], num_sess, axis=0)
@@ -212,17 +212,62 @@ plt.imshow(inferred_states[None,:], aspect="auto")
 from glmrnn.rnn_torch import RNN, lowrank_RNN, observed_RNN, RNNTrainer
 import torch
 # %% setup params
-N = num_states*1
-K = obs_dim*1
+K = num_states*1
+N = obs_dim*1
 T = time_len*1
 dt = 0.1
+tau = 2
 
 # %% match type and dims
+my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
 target_spikes = np.array(true_spikes)
-#glmrnn.state2onehot
-#inp
-# %% try RNN
+target_states = []
+target_rates = []
+for ii in range(num_sess):
+    temp_state = my_glmrnn.state2onehot(true_latents[ii], K)
+    temp_rate = my_glmrnn.kernel_filt(true_spikes[ii].T)
+    target_states.append(temp_state)
+    target_rates.append(temp_rate)
+
+# tensorize
+target_rates = torch.Tensor(np.transpose(target_rates, axes=(0,2,1)))
+target_spikes = torch.Tensor(np.array(target_spikes))
+inp = torch.Tensor(np.array(inpts))
+target_states = torch.Tensor(np.transpose(np.array(target_states), axes=(0,2,1)))
+
+# %% try RNN training
 inf_net = observed_RNN(input_dim, N, dt, 1) 
 masks = torch.ones(num_sess, T+0, N)
-trainer = RNNTrainer(inf_net, 'joint', spk_target=target_spikes)
-losses = trainer.train(inp, target_rates, masks, n_epochs=150, lr=1e-1, batch_size=10)
+trainer = RNNTrainer(inf_net, 'MSE', spk_target=target_spikes, st_target=target_states)
+losses = trainer.train(inp, target_rates, masks, n_epochs=100, lr=1e-2, batch_size=10)
+plt.figure()
+plt.plot(np.arange(len(losses)), losses)
+plt.title('Learning curve')
+plt.xlabel('epoch')
+plt.ylabel('loss')
+
+# %% generative with rate
+trid = 0
+_, outputs_rt = inf_net.forward(inp)
+plt.figure()
+plt.imshow(outputs_rt[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
+plt.figure()
+plt.imshow(target_rates[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
+
+# %% generative with spikes
+lamb = 10
+gen_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
+gen_glmrnn.lamb_max = 10
+gen_glmrnn.W = inf_net.J.detach().numpy()*lamb
+gen_glmrnn.U = inf_net.B.detach().numpy().squeeze()*lamb
+gen_glmrnn.b = gen_glmrnn.b
+
+spk,rt = gen_glmrnn.forward(inp[trid].detach().numpy())
+plt.figure(figsize=(15,10))
+plt.subplot(121)
+plt.imshow(target_rates[trid].T,aspect='auto')
+plt.title('true spikes',fontsize=40)
+plt.subplot(122)
+plt.imshow(rt,aspect='auto')
+plt.title('inferred spikes',fontsize=40)
+
