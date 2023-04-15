@@ -17,12 +17,12 @@ from ssm.optimizers import adam, bfgs, rmsprop, sgd
 eps = 10**-10
 class glmrnn:
     
-    def __init__(self, N, T, dt, k, kernel_type='tau', nl_type='log-linear', spk_type="Poisson"):
+    def __init__(self, N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson"):
         
         self.N = N
         self.T = T
         self.dt = dt
-        self.tau = k
+        self.tau = tau
         self.kernel_type, self.nl_type, self.spk_type = kernel_type, nl_type, spk_type
         if nl_type=='sigmoid':    
             self.lamb_max = 1
@@ -36,6 +36,11 @@ class glmrnn:
         self.U = np.random.randn(N)*0.1  # initial input vector
         self.data = [] 
         self.K = 2 # number of states for state-transitions
+        if kernel_type=='basis':
+            self.nbasis = 4  # number of basis functions
+            nbins = int(np.floor(tau/dt))
+            self.nbins = nbins  # time window tiled
+            self.W = np.random.randn(N,N,nbins)*0.1  # tensor with kernel weights
         
     def forward(self, ipt=None):
         """
@@ -43,8 +48,8 @@ class glmrnn:
         """
         if ipt is None:
             ipt = np.zeros(self.T)
-        spk = np.ones((self.N, self.T))
-        rt = np.ones((self.N, self.T))
+        spk = np.zeros((self.N, self.T))
+        rt = np.zeros((self.N, self.T))
         for tt in range(self.T-1):
             lamb = self.W @ rt[:,tt] + self.b + self.U*ipt[tt]
             spk[:,tt] = self.spiking(self.nonlinearity(lamb)*self.dt)
@@ -52,6 +57,23 @@ class glmrnn:
 #        self.data = (spk,rt,ipt)
         if self.spk_type=='Gaussian':
             return spk, rt
+        
+        if self.kernel_type=='basis':
+            if ipt is None:
+                ipt = np.zeros(self.T+self.nbins)  # padding for kernel window
+            else:
+                int = np.concatenate((ipt, np.zeros(self.nbins)))
+            spk = np.zeros((self.N, self.T+self.nbins))
+            rt = np.zeros((self.N, self.T+self.nbins))
+            Wijk = self.weight2kernel()
+            for tt in range(self.nbins,self.T):
+                ut = self.b + self.U*ipt[tt] + \
+                     np.einsum('ijk,jk->i',  Wijk, spk[:,tt-self.nbins:tt])  #neat way for linear dynamics
+                ut = self.nonlinearity(ut)*self.dt
+                rt[:,tt] = ut
+                spk[:,tt] = self.spiking(ut)
+            spk = spk[:,self.nbins:]  # remove padding
+            rt = rt[:,self.nbins:]
         return spk.astype(int), rt
     
     def nonlinearity(self, x):
@@ -105,7 +127,33 @@ class glmrnn:
         for tt in range(self.T-1):
             rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
         return rt
-        
+    
+    def weight2kernel(self):
+        """
+        Turning W into tensor of coupling kernels Wijk
+        """
+        Wijk = np.zeros((self.N, self.N, self.nbins))
+        for ii in range(self.N):
+            for jj in range(self.N):
+                Wijk[ii,jj,:] = self.W[ii,jj,:] @ self.basis_function().T
+        return Wijk
+    
+    def basis_function(self):
+        """
+        Raised cosine basis function to tile the time course of the response kernel
+        nkbins of time points in the kernel and nBases for the number of basis functions
+        """
+        nkbins = self.nbins
+        nBases = self.nbasis
+        ttb = np.tile(np.log(np.arange(0,nkbins)+1)/np.log(1.4),(nBases,1))  #take log for nonlinear time
+        dbcenter = nkbins / (nBases+int(nkbins/3)) # spacing between bumps
+        width = 5.*dbcenter # width of each bump
+        bcenters = 1.*dbcenter + dbcenter*np.arange(0,nBases)  # location of each bump centers
+        def bfun(x,period):
+            return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)  #raise-cosine function formula
+        temp = ttb - np.tile(bcenters,(nkbins,1)).T
+        BBstm = np.array([bfun(xx,width) for xx in temp]).T
+        return BBstm  # output bin x basis
         
     def neg_log_likelihood(self, ww, spk, rt, ipt=None, state=None, lamb=0):
         """

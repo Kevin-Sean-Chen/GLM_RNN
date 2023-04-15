@@ -38,16 +38,17 @@ true_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations="poisson", tr
 # possible to be both driven!
 
 # input driving conditions
-driven_emission = 0
+driven_emission = 1
 driven_state = 1
 drive_logic = np.min([driven_emission+driven_state,1])
 
 # %%  replace from here for now
 if driven_emission==1:
     true_glmhmm.observations = GLM_PoissonObservations(num_states, obs_dim, input_dim)
+    true_glmhmm.observations.Wk *= 3.
     print(true_glmhmm.observations.Wk.shape)
 if driven_state==1 :
-    true_glmhmm.transitions.Ws *= 3
+    true_glmhmm.transitions.Ws *= 3.
     print(true_glmhmm.transitions.Ws)
 else:
     print(true_glmhmm.transitions.transition_matrix)
@@ -67,10 +68,20 @@ stim_vals = [-1, -0.5, -0.25, -0.125, -0.0625, 0, 0.0625, 0.125, 0.25, 0.5, 1]
 ### noisy sine input
 inpts = np.sin(2*np.pi*np.arange(time_len)/600)[:,None]*.5*0 +\
         np.cos(2*np.pi*np.arange(time_len)/200)[:,None]*1.*0 +\
-        .1*npr.randn(time_len,input_dim)
+        .1*npr.randn(time_len,input_dim)*0 + \
+        np.arange(0,time_len,1)[:,None]/time_len
 
 inpts = np.repeat(inpts[None,:,:], num_sess, axis=0)
 inpts = list(inpts) #convert inpts to correct format
+
+# different for each session
+inpts = []
+for ii in range(num_sess):
+#    inpt_ = np.arange(0,time_len,1)[:,None]/time_len + .1*npr.randn(time_len,input_dim)*1 # noisy ramp
+    inpt_ = np.sin(2*np.pi*np.arange(time_len)/600)[:,None]*.1 +\
+        np.cos(2*np.pi*np.arange(time_len)/200)[:,None]*.1 +\
+        .1*npr.randn(time_len,input_dim)*.5
+    inpts.append(inpt_)
 
 # %%
 # Generate a sequence of latents and choices for each session
@@ -133,7 +144,7 @@ except:
 N = obs_dim*1
 T = time_len*1
 dt = 0.1
-tau = 1
+tau = 2
 
 spk_targ = true_spikes[0].T
 my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
@@ -144,7 +155,7 @@ data = (spk_targ, inpts[0])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 0
+ii = 9
 spk,rt = my_glmrnn.forward(inpts[ii])
 plt.figure(figsize=(15,10))
 plt.subplot(121)
@@ -162,8 +173,8 @@ datas = (true_spikes, inpts)
 my_glmrnn.fit_glm(datas)  # using ssm gradient
 
 # %% test states
-datas = (true_spikes, inpts, true_latents)
-my_glmrnn.fit_glm_states(datas,2)
+#datas = (true_spikes, inpts, true_latents)
+#my_glmrnn.fit_glm_states(datas,2)
 ###
 # idea is that, given more input driven has better inference, we should provide fake input!
 ###
@@ -195,9 +206,12 @@ for ii in range(num_states):
 plt.legend(fontsize=20)
 plt.title('Emission weights', fontsize=40)
 
+# %%
+#rnn_glmhmm.permute(find_permutation(true_latents[0], rnn_glmhmm.most_likely_states(rnn_spikes[0], input=inpts[0])))
+
 # %% latents
-ii = 0
-inferred_states = rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=inpts[ii])
+ii = 9
+inferred_states = rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=(inpts[ii]))
 plt.figure()
 plt.subplot(211)
 plt.imshow(true_latents[ii][None,:], aspect='auto')
@@ -238,8 +252,8 @@ target_states = torch.Tensor(np.transpose(np.array(target_states), axes=(0,2,1))
 # %% try RNN training
 inf_net = observed_RNN(input_dim, N, dt, 1) 
 masks = torch.ones(num_sess, T+0, N)
-trainer = RNNTrainer(inf_net, 'MSE', spk_target=target_spikes, st_target=target_states)
-losses = trainer.train(inp, target_rates, masks, n_epochs=100, lr=1e-2, batch_size=10)
+trainer = RNNTrainer(inf_net, 'state', spk_target=target_spikes, st_target=target_states)
+losses = trainer.train(inp, target_rates, masks, n_epochs=100, lr=1e-1, batch_size=10)
 plt.figure()
 plt.plot(np.arange(len(losses)), losses)
 plt.title('Learning curve')
@@ -255,12 +269,12 @@ plt.figure()
 plt.imshow(target_rates[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
 
 # %% generative with spikes
-lamb = 10
+lamb = 1
 gen_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
-gen_glmrnn.lamb_max = 10
+gen_glmrnn.lamb_max = 5
 gen_glmrnn.W = inf_net.J.detach().numpy()*lamb
 gen_glmrnn.U = inf_net.B.detach().numpy().squeeze()*lamb
-gen_glmrnn.b = gen_glmrnn.b
+gen_glmrnn.b = gen_glmrnn.b*lamb
 
 spk,rt = gen_glmrnn.forward(inp[trid].detach().numpy())
 plt.figure(figsize=(15,10))
