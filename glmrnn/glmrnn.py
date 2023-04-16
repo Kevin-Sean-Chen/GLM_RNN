@@ -40,29 +40,30 @@ class glmrnn:
             self.nbasis = 4  # number of basis functions
             nbins = int(np.floor(tau/dt))
             self.nbins = nbins  # time window tiled
-            self.W = np.random.randn(N,N,nbins)*0.1  # tensor with kernel weights
+            self.W = np.random.randn(N,N,4)*0.1  # tensor with kernel weights
         
     def forward(self, ipt=None):
         """
         forward simulation of GLM-RNN given parameters
         """
-        if ipt is None:
-            ipt = np.zeros(self.T)
-        spk = np.zeros((self.N, self.T))
-        rt = np.zeros((self.N, self.T))
-        for tt in range(self.T-1):
-            lamb = self.W @ rt[:,tt] + self.b + self.U*ipt[tt]
-            spk[:,tt] = self.spiking(self.nonlinearity(lamb)*self.dt)
-            rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
-#        self.data = (spk,rt,ipt)
-        if self.spk_type=='Gaussian':
-            return spk, rt
+        if self.kernel_type != 'basis':
+            if ipt is None:
+                ipt = np.zeros(self.T)
+            spk = np.zeros((self.N, self.T))
+            rt = np.zeros((self.N, self.T))
+            for tt in range(self.T-1):
+                lamb = self.W @ rt[:,tt] + self.b + self.U*ipt[tt]
+                spk[:,tt] = self.spiking(self.nonlinearity(lamb)*self.dt)
+                rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
+    #        self.data = (spk,rt,ipt)
+            if self.spk_type=='Gaussian':
+                return spk, rt
         
-        if self.kernel_type=='basis':
+        if self.kernel_type == 'basis':
             if ipt is None:
                 ipt = np.zeros(self.T+self.nbins)  # padding for kernel window
             else:
-                int = np.concatenate((ipt, np.zeros(self.nbins)))
+                ipt = np.concatenate((ipt.squeeze(), np.zeros(self.nbins)))
             spk = np.zeros((self.N, self.T+self.nbins))
             rt = np.zeros((self.N, self.T+self.nbins))
             Wijk = self.weight2kernel()
@@ -117,25 +118,38 @@ class glmrnn:
         return filt
     
     #@classmethod
-    def kernel_filt(self, spk):
+    def kernel_filt(self, spk, Wijk=None):
         """
         given spike train produce synaptic filtered rate
         I: spk: N x T
         O: rt: N x T
         """
-        rt = np.zeros((self.N, self.T))
-        for tt in range(self.T-1):
-            rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
+        if self.kernel_type != 'basis':
+            rt = np.zeros((self.N, self.T))
+            for tt in range(self.T-1):
+                rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
+        elif self.kernel_type == 'basis':
+            rt = np.zeros((self.N, self.T+self.nbins))
+            if Wijk is None:
+                Wijk = self.weight2kernel()
+            for tt in range(self.nbins, self.T):
+                rt[:,tt] = np.einsum('ijk,jk->i',  Wijk, spk[:,tt-self.nbins:tt])
+            rt = rt[:,self.nbins:]
         return rt
     
-    def weight2kernel(self):
+    def weight2kernel(self, weights=None):
         """
         Turning W into tensor of coupling kernels Wijk
         """
         Wijk = np.zeros((self.N, self.N, self.nbins))
-        for ii in range(self.N):
-            for jj in range(self.N):
-                Wijk[ii,jj,:] = self.W[ii,jj,:] @ self.basis_function().T
+        if weights is None:
+            for ii in range(self.N):
+                for jj in range(self.N):
+                    Wijk[ii,jj,:] = self.W[ii,jj,:] @ self.basis_function().T
+        else:
+            for ii in range(self.N):
+                for jj in range(self.N):
+                    Wijk[ii,jj,:] = weights[ii,jj,:] @ self.basis_function().T
         return Wijk
     
     def basis_function(self):
@@ -204,6 +218,25 @@ class glmrnn:
             onehot = self.state2onehot(state)  # one-hot of true states
             state_cost = -np.sum(onehot * lp_states)  
             return -ll + state_cost
+        
+    def neg_log_likelihood_kernel(self, ww, spk, rt=None, ipt=None, lamb=0):
+        """
+        Negative log-likelihood function for interacting kernel functions
+        I: parameter vector, spike train, and regularization
+        O: negative log-likelihood
+        """
+        # unpack parameters
+        b = ww[:self.N]
+        U = ww[self.N:self.N*2]
+        W = ww[self.N*2:].reshape(self.N, self.N, self.nbasis)
+        Wijk = self.weight2kernel(W)
+        lamb = self.kernel_filt(spk, Wijk) + b[:,None] + U[:,None]*ipt.T
+        print(lamb.shape)
+        ll = (spk * np.log(self.nonlinearity(lamb)+eps) \
+                    - self.nonlinearity(lamb)*self.dt) \
+                    - lamb*np.linalg.norm(W)
+        ll = np.sum(ll)
+        return -ll
            
     def state2onehot(self, states, K=None):
         """
