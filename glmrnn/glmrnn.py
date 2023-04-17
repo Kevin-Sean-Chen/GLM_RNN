@@ -25,7 +25,7 @@ class glmrnn:
         self.tau = tau
         self.kernel_type, self.nl_type, self.spk_type = kernel_type, nl_type, spk_type
         if nl_type=='sigmoid':    
-            self.lamb_max = 1
+            self.lamb_max = 20
             self.lamb_min = 0
         if spk_type=="neg-bin":
             self.rnb = 0.1
@@ -37,10 +37,11 @@ class glmrnn:
         self.data = [] 
         self.K = 2 # number of states for state-transitions
         if kernel_type=='basis':
-            self.nbasis = 4  # number of basis functions
+            nbasis = 2
+            self.nbasis = nbasis  # number of basis functions
             nbins = int(np.floor(tau/dt))
             self.nbins = nbins  # time window tiled
-            self.W = np.random.randn(N,N,4)*0.1  # tensor with kernel weights
+            self.W = np.random.randn(N,N,nbasis)*0.1  # tensor with kernel weights
         
     def forward(self, ipt=None):
         """
@@ -129,27 +130,44 @@ class glmrnn:
             for tt in range(self.T-1):
                 rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
         elif self.kernel_type == 'basis':
-            rt = np.zeros((self.N, self.T+self.nbins))
+#            rt = np.zeros((self.N, self.T+self.nbins))
+            rt = []
             if Wijk is None:
                 Wijk = self.weight2kernel()
-            for tt in range(self.nbins, self.T):
-                rt[:,tt] = np.einsum('ijk,jk->i',  Wijk, spk[:,tt-self.nbins:tt])
-            rt = rt[:,self.nbins:]
+            spk_ = np.concatenate((np.zeros((self.N,self.nbins)),spk),1)  # padding
+            for tt in range(self.nbins, self.T+self.nbins):
+#                rt[:,tt] = np.einsum('ijk,jk->i',  Wijk, spk[:,tt-self.nbins:tt])
+                rt.append(np.einsum('ijk,jk->i',  Wijk, spk_[:,tt-self.nbins:tt]))
+            rt = np.array(rt).T
+#            rt = rt[:,self.nbins:]
         return rt
     
     def weight2kernel(self, weights=None):
         """
         Turning W into tensor of coupling kernels Wijk
         """
-        Wijk = np.zeros((self.N, self.N, self.nbins))
+#        Wijk = np.zeros((self.N, self.N, self.nbins))
+        Wijk = []
         if weights is None:
             for ii in range(self.N):
                 for jj in range(self.N):
-                    Wijk[ii,jj,:] = self.W[ii,jj,:] @ self.basis_function().T
-        else:
+#                    Wijk[ii,jj,:] = self.W[ii,jj,:] @ self.basis_function().T
+                    temp = self.W[ii,jj,:] @ self.basis_function().T
+                    Wijk.append(temp)
+            Wijk = np.array(Wijk).reshape(self.N, self.N, self.nbins)
+        elif weights is not None:
             for ii in range(self.N):
                 for jj in range(self.N):
-                    Wijk[ii,jj,:] = weights[ii,jj,:] @ self.basis_function().T
+                    temp = weights[ii,jj,:] @ self.basis_function().T
+                    Wijk.append(temp)
+            Wijk = np.array(Wijk).reshape(self.N, self.N, self.nbins)
+                    ### debugging
+#                    try:
+#                        Wijk[ii,jj,:] = weights[ii,jj,:] @ self.basis_function().T
+#                    except ValueError as e:
+#                        print("Error: ", e)
+#                        print(Wijk[ii,jj,:])
+#                        print((weights[ii,jj,:] @ self.basis_function().T))
         return Wijk
     
     def basis_function(self):
@@ -219,19 +237,16 @@ class glmrnn:
             state_cost = -np.sum(onehot * lp_states)  
             return -ll + state_cost
         
-    def neg_log_likelihood_kernel(self, ww, spk, rt=None, ipt=None, lamb=0):
+    def neg_log_likelihood_kernel(self, ww, spk, rt=None, ipt=None, lamb=10):
         """
         Negative log-likelihood function for interacting kernel functions
         I: parameter vector, spike train, and regularization
         O: negative log-likelihood
         """
         # unpack parameters
-        b = ww[:self.N]
-        U = ww[self.N:self.N*2]
-        W = ww[self.N*2:].reshape(self.N, self.N, self.nbasis)
-        Wijk = self.weight2kernel(W)
+        b, U, Wijk = self.vec2param_kernel(ww, full_kernel=True)
+        _,_,W = self.vec2param_kernel(ww, full_kernel=False)
         lamb = self.kernel_filt(spk, Wijk) + b[:,None] + U[:,None]*ipt.T
-        print(lamb.shape)
         ll = (spk * np.log(self.nonlinearity(lamb)+eps) \
                     - self.nonlinearity(lamb)*self.dt) \
                     - lamb*np.linalg.norm(W)
@@ -251,6 +266,16 @@ class glmrnn:
         for tt in range(T):
             onehot[int(states[tt]),tt] = 1
         return onehot
+    
+    def vec2param_kernel(self, ww, full_kernel=False):
+        b = ww[:self.N]
+        U = ww[self.N:self.N*2]
+        W = ww[self.N*2:].reshape(self.N, self.N, self.nbasis)
+        if full_kernel is False:
+            return b, U, W
+        elif full_kernel is True:
+            Wijk = self.weight2kernel(weights=W)  # lesson: there is something about autograd array-box
+            return b, U, Wijk
 
     def param2vec(self, b,U,W):
         ww = np.concatenate((b.reshape(-1),U.reshape(-1),W.reshape(-1)))
@@ -387,6 +412,16 @@ class glmrnn:
                     lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt, stt)
                     ll += np.sum(lli)
             return ll
+        
+    def log_marginal_kernel(self, ww, spks, ipts):
+        """
+        to avoid complextiy with states, use another function for kernel-based log-likelihood
+        """
+        ll = 0
+        for spk,ipt in zip(spks, ipts):
+            lli = -self.neg_log_likelihood_kernel(ww, spk.T, ipt=ipt)
+            ll += np.sum(lli)
+        return ll
     
     def fit_batch_sp(self, data, lamb=0):
         """
@@ -415,24 +450,31 @@ class glmrnn:
         optimizer = dict(adam=adam, bfgs=bfgs, rmsprop=rmsprop,
                          sgd=sgd)[optimizer]
         l_spk, l_ut = data
-        if l_ut[0] is None:
+        if l_ut[0] is None and self.kernel_type!='basis':
             params = np.ones(self.N**2 + self.N)
-        elif l_ut[0] is not None:
+        elif l_ut[0] is not None and self.kernel_type!='basis':
             params = np.ones(self.N**2 + self.N*2)
+        elif l_ut[0] is not None and self.kernel_type=='basis':
+            params = np.ones(self.N**2*self.nbasis + self.N*2)
         
         def _objective(params, itr):
-            obj = self.log_marginal(params, l_spk, l_ut)
+            if self.kernel_type!='basis':
+                obj = self.log_marginal(params, l_spk, l_ut)
+            elif self.kernel_type=='basis':
+                obj = self.log_marginal_kernel(params, l_spk, l_ut)
             return -obj
 
         params = optimizer(_objective,
                                 params,
                                 num_iters=num_iters,
                                 **kwargs)
-        if l_ut[0] is None:
+        if l_ut[0] is None and self.kernel_type!='basis':
             self.b, self.W = self.vec2param(params, state=False, ipt=False)
             self.U *= 0
-        elif l_ut[0] is not None:
+        elif l_ut[0] is not None and self.kernel_type!='basis':
             self.b, self.U, self.W = self.vec2param(params)
+        elif self.kernel_type=='basis':
+            self.b, self.U, self.W = self.vec2param_kernel(params)
         
     #####
     # IDEA: with 'weight' parameter normaly use in ssm training, develop an algorithm for GLM-RNN,

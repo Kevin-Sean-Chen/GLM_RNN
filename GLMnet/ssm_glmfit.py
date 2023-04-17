@@ -28,7 +28,7 @@ matplotlib.rc('ytick', labelsize=30)
 
 # %%
 num_states = 2        # number of discrete states           K
-obs_dim = 10          # number of observed dimensions       D
+obs_dim = 5           # number of observed dimensions       D
 input_dim = 1         # input dimensions                    M
 
 # Make a GLM-HMM
@@ -147,7 +147,8 @@ dt = 0.1
 tau = 2
 
 spk_targ = true_spikes[0].T
-my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
+#my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
+my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
 spk,rt = my_glmrnn.forward(inpts[0])
 
 # %% inference
@@ -155,9 +156,9 @@ data = (spk_targ, inpts[0])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 9
+ii = 10
 spk,rt = my_glmrnn.forward(inpts[ii])
-plt.figure(figsize=(15,10))
+plt.figure(figsize=(20,10))
 plt.subplot(121)
 plt.imshow(true_spikes[ii].T,aspect='auto')
 plt.title('true spikes',fontsize=40)
@@ -170,7 +171,7 @@ plt.title('inferred spikes',fontsize=40)
 datas = (true_spikes, inpts)
 #my_glmrnn.fit_batch(datas)  # using regression tools
 #my_glmrnn.fit_batch_sp(datas)  # this seems to currently work!!...but take too long
-my_glmrnn.fit_glm(datas)  # using ssm gradient
+my_glmrnn.fit_glm(datas, num_iters=1)  # using ssm gradient
 
 # %% test states
 #datas = (true_spikes, inpts, true_latents)
