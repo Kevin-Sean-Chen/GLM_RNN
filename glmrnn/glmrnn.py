@@ -8,6 +8,7 @@ Created on Thu Feb 16 11:47:29 2023
 #import numpy as np
 import autograd.numpy as np
 import scipy as sp
+from scipy.linalg import hankel
 from autograd.scipy.special import logsumexp
 from ssm.regression import fit_scalar_glm
 
@@ -25,7 +26,7 @@ class glmrnn:
         self.tau = tau
         self.kernel_type, self.nl_type, self.spk_type = kernel_type, nl_type, spk_type
         if nl_type=='sigmoid':    
-            self.lamb_max = 20
+            self.lamb_max = 100
             self.lamb_min = 0
         if spk_type=="neg-bin":
             self.rnb = 0.1
@@ -131,34 +132,67 @@ class glmrnn:
                 rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
         elif self.kernel_type == 'basis':
 #            rt = np.zeros((self.N, self.T+self.nbins))
-            rt = []
-            if Wijk is None:
-                Wijk = self.weight2kernel()
-            spk_ = np.concatenate((np.zeros((self.N,self.nbins)),spk),1)  # padding
-            for tt in range(self.nbins, self.T+self.nbins):
-#                rt[:,tt] = np.einsum('ijk,jk->i',  Wijk, spk[:,tt-self.nbins:tt])
-                rt.append(np.einsum('ijk,jk->i',  Wijk, spk_[:,tt-self.nbins:tt]))
-            rt = np.array(rt).T
+#            rt = []
+#            if Wijk is None:
+#                Wijk = self.weight2kernel()
+#            spk_ = np.concatenate((np.zeros((self.N,self.nbins)),spk),1)  # padding
+#            for tt in range(self.nbins, self.T+self.nbins):
+##                rt[:,tt] = np.einsum('ijk,jk->i',  Wijk, spk[:,tt-self.nbins:tt])
+#                rt.append(np.einsum('ijk,jk->i',  Wijk, spk_[:,tt-self.nbins:tt]))
+#            rt = np.array(rt).T
+            ### too slow... try matrix method~~
+            # rt = self.design_matrix(spk)
+            rt = self.design_matrix_proj(spk, Wijk)
+            ###
 #            rt = rt[:,self.nbins:]
         return rt
     
-    def weight2kernel(self, weights=None):
+    def design_matrix_proj(self, spk, weights):
+        """
+        return matrix that has spikes projected onto weighted kernels
+        spk:      TxN spiking pattern
+        weights:  N*nbasis weight vector
+        Output:   X is (N*nbasis) x T
+        """  
+        N, T = spk.shape  # time and number of neurons
+        D = self.nbins+1  # length of padding for kernels
+#        k_weights = weights.reshape(self.N, self.N, self.nbasis)  # reshape to N x nbasis
+        Wijk = self.weight2kernel(weights.reshape(self.N,self.N,self.nbasis), flip=True)  # N x N x nbins
+        y = spk*1  #spiking patterns
+#        basis = self.basis_function()  # D x nbasis
+        rt = []  # the projected firing rate
+        for ni in range(N):  ### fix this###
+            yi = y[ni,:]  # ith neuron
+            Xi = sp.linalg.hankel(np.append(np.zeros(D-2),yi[:T-D+2]),yi[T-D+1:])  # design matrix
+            rj = []
+            for nj in range(N):
+#                rt[nj,:] = rt[nj,:] + Xi @ Wijk[ni,nj,:]  # adding the projection onto rate of that neuron
+                rj.append(Xi @ Wijk[ni,nj,:])
+            rt.append(rj)
+        return np.array(rt).sum(0)
+    
+          
+    def weight2kernel(self, weights=None, flip=False):
         """
         Turning W into tensor of coupling kernels Wijk
         """
 #        Wijk = np.zeros((self.N, self.N, self.nbins))
         Wijk = []
+        if flip is True:
+            basis = np.flipud(self.basis_function())
+        else:
+            basis = self.basis_function()
         if weights is None:
             for ii in range(self.N):
                 for jj in range(self.N):
 #                    Wijk[ii,jj,:] = self.W[ii,jj,:] @ self.basis_function().T
-                    temp = self.W[ii,jj,:] @ self.basis_function().T
+                    temp = self.W[ii,jj,:] @ basis.T
                     Wijk.append(temp)
             Wijk = np.array(Wijk).reshape(self.N, self.N, self.nbins)
         elif weights is not None:
             for ii in range(self.N):
                 for jj in range(self.N):
-                    temp = weights[ii,jj,:] @ self.basis_function().T
+                    temp = weights[ii,jj,:] @ basis.T
                     Wijk.append(temp)
             Wijk = np.array(Wijk).reshape(self.N, self.N, self.nbins)
                     ### debugging
@@ -184,7 +218,7 @@ class glmrnn:
         def bfun(x,period):
             return (abs(x/period)<0.5)*(np.cos(x*2*np.pi/period)*.5+.5)  #raise-cosine function formula
         temp = ttb - np.tile(bcenters,(nkbins,1)).T
-        BBstm = np.array([bfun(xx,width) for xx in temp]).T
+        BBstm = np.flipud(np.array([bfun(xx,width) for xx in temp]).T)
         return BBstm  # output bin x basis
         
     def neg_log_likelihood(self, ww, spk, rt, ipt=None, state=None, lamb=0):
@@ -237,20 +271,23 @@ class glmrnn:
             state_cost = -np.sum(onehot * lp_states)  
             return -ll + state_cost
         
-    def neg_log_likelihood_kernel(self, ww, spk, rt=None, ipt=None, lamb=10):
+    def neg_log_likelihood_kernel(self, ww, spk, rt=None, ipt=None, lamb=0):
         """
         Negative log-likelihood function for interacting kernel functions
         I: parameter vector, spike train, and regularization
         O: negative log-likelihood
         """
         # unpack parameters
-        b, U, Wijk = self.vec2param_kernel(ww, full_kernel=True)
-        _,_,W = self.vec2param_kernel(ww, full_kernel=False)
-        lamb = self.kernel_filt(spk, Wijk) + b[:,None] + U[:,None]*ipt.T
-        ll = (spk * np.log(self.nonlinearity(lamb)+eps) \
+#        b, U, Wijk = self.vec2param_kernel(ww, full_kernel=True)
+#        _,_,W = self.vec2param_kernel(ww, full_kernel=False)
+#        lamb = self.kernel_filt(spk, Wijk) + b[:,None] + U[:,None]*ipt.T
+        b = ww[:self.N]
+        U = ww[self.N:self.N*2]
+        W = ww[self.N*2:]
+        lamb = self.design_matrix_proj(spk, W) + b[:,None] + U[:,None]*ipt.T
+        ll = np.sum(spk * np.log(self.nonlinearity(lamb)+eps) \
                     - self.nonlinearity(lamb)*self.dt) \
                     - lamb*np.linalg.norm(W)
-        ll = np.sum(ll)
         return -ll
            
     def state2onehot(self, states, K=None):

@@ -28,7 +28,7 @@ matplotlib.rc('ytick', labelsize=30)
 
 # %%
 num_states = 2        # number of discrete states           K
-obs_dim = 5           # number of observed dimensions       D
+obs_dim = 3           # number of observed dimensions       D
 input_dim = 1         # input dimensions                    M
 
 # Make a GLM-HMM
@@ -147,17 +147,24 @@ dt = 0.1
 tau = 2
 
 spk_targ = true_spikes[0].T
-#my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
+#my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
 my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
 spk,rt = my_glmrnn.forward(inpts[0])
+
+# %% try generating and infereing with same structure!
+true_spikes = []
+for sess in range(num_sess):
+    true_y, _ = my_glmrnn.forward(inpts[sess])  #changed hmm.py line206!
+    true_spikes.append(true_y.T)
 
 # %% inference
 data = (spk_targ, inpts[0])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 10
-spk,rt = my_glmrnn.forward(inpts[ii])
+ii = 30
+spk,rt = inf_glmrnn.forward(inpts[ii])
+#spk,rt = my_glmrnn.forward(inpts[ii])
 plt.figure(figsize=(20,10))
 plt.subplot(121)
 plt.imshow(true_spikes[ii].T,aspect='auto')
@@ -167,11 +174,13 @@ plt.imshow(spk,aspect='auto')
 plt.title('inferred spikes',fontsize=40)
 
 # %% test with batch
+inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
+#inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
 #datas = ([true_spikes[0]], [inpts[0]])  # debug this~~~   # might be 'dt'??
 datas = (true_spikes, inpts)
 #my_glmrnn.fit_batch(datas)  # using regression tools
 #my_glmrnn.fit_batch_sp(datas)  # this seems to currently work!!...but take too long
-my_glmrnn.fit_glm(datas, num_iters=1)  # using ssm gradient
+inf_glmrnn.fit_glm(datas)#, num_iters=1)  # using ssm gradient
 
 # %% test states
 #datas = (true_spikes, inpts, true_latents)
@@ -184,7 +193,7 @@ my_glmrnn.fit_glm(datas, num_iters=1)  # using ssm gradient
 ###############################################################################
 rnn_spikes = []
 for sess in range(num_sess):
-    spk, rt = my_glmrnn.forward(inpts[sess])  #changed hmm.py line206!
+    spk, rt = inf_glmrnn.forward(inpts[sess])  #changed hmm.py line206!
     rnn_spikes.append(spk.T)
     
 # %%
@@ -208,10 +217,10 @@ plt.legend(fontsize=20)
 plt.title('Emission weights', fontsize=40)
 
 # %%
-#rnn_glmhmm.permute(find_permutation(true_latents[0], rnn_glmhmm.most_likely_states(rnn_spikes[0], input=inpts[0])))
+rnn_glmhmm.permute(find_permutation(true_latents[0], rnn_glmhmm.most_likely_states(rnn_spikes[0], input=inpts[0])))
 
 # %% latents
-ii = 9
+ii = 0
 inferred_states = rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=(inpts[ii]))
 plt.figure()
 plt.subplot(211)
