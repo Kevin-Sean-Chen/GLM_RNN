@@ -45,10 +45,10 @@ drive_logic = np.min([driven_emission+driven_state,1])
 # %%  replace from here for now
 if driven_emission==1:
     true_glmhmm.observations = GLM_PoissonObservations(num_states, obs_dim, input_dim)
-    true_glmhmm.observations.Wk *= 3.
+    true_glmhmm.observations.Wk *= 5.
     print(true_glmhmm.observations.Wk.shape)
 if driven_state==1 :
-    true_glmhmm.transitions.Ws *= 3.
+    true_glmhmm.transitions.Ws *= 5.
     print(true_glmhmm.transitions.Ws)
 else:
     print(true_glmhmm.transitions.transition_matrix)
@@ -144,26 +144,35 @@ except:
 N = obs_dim*1
 T = time_len*1
 dt = 0.1
-tau = 2
+tau = 1
 
 spk_targ = true_spikes[0].T
-#my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
-my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
+my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
+#my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
 spk,rt = my_glmrnn.forward(inpts[0])
 
 # %% try generating and infereing with same structure!
-true_spikes = []
-for sess in range(num_sess):
-    true_y, _ = my_glmrnn.forward(inpts[sess])  #changed hmm.py line206!
-    true_spikes.append(true_y.T)
+#true_spikes = []
+#for sess in range(num_sess):
+#    true_y, _ = my_glmrnn.forward(inpts[sess])  #changed hmm.py line206!
+#    true_spikes.append(true_y.T)
 
 # %% inference
 data = (spk_targ, inpts[0])
 my_glmrnn.fit_single(data,lamb=0)
 
+# %% test with batch
+#inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
+inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
+#datas = ([true_spikes[0]], [inpts[0]])  # debug this~~~   # might be 'dt'??
+datas = (true_spikes, inpts)
+#my_glmrnn.fit_batch(datas)  # using regression tools
+#my_glmrnn.fit_batch_sp(datas)  # this seems to currently work!!...but take too long
+inf_glmrnn.fit_glm(datas)#, num_iters=1)  # using ssm gradient
+
 # %%
-ii = 30
-spk,rt = inf_glmrnn.forward(inpts[ii])
+ii = 1
+spk,rt = inf_glmrnn.forward(inpts[ii]*1)
 #spk,rt = my_glmrnn.forward(inpts[ii])
 plt.figure(figsize=(20,10))
 plt.subplot(121)
@@ -172,15 +181,6 @@ plt.title('true spikes',fontsize=40)
 plt.subplot(122)
 plt.imshow(spk,aspect='auto')
 plt.title('inferred spikes',fontsize=40)
-
-# %% test with batch
-inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
-#inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
-#datas = ([true_spikes[0]], [inpts[0]])  # debug this~~~   # might be 'dt'??
-datas = (true_spikes, inpts)
-#my_glmrnn.fit_batch(datas)  # using regression tools
-#my_glmrnn.fit_batch_sp(datas)  # this seems to currently work!!...but take too long
-inf_glmrnn.fit_glm(datas)#, num_iters=1)  # using ssm gradient
 
 # %% test states
 #datas = (true_spikes, inpts, true_latents)
@@ -192,19 +192,24 @@ inf_glmrnn.fit_glm(datas)#, num_iters=1)  # using ssm gradient
 # %% now fit it back with ssm!
 ###############################################################################
 rnn_spikes = []
+rnn_inpts = []
+rnn_latents = []
 for sess in range(num_sess):
     spk, rt = inf_glmrnn.forward(inpts[sess])  #changed hmm.py line206!
-    rnn_spikes.append(spk.T)
+    rnn_spikes.append(spk[:,:-inf_glmrnn.nbins].T)
+    rnn_inpts.append(inpts[sess][:-inf_glmrnn.nbins])
+    rnn_latents.append(true_latents[sess][:-inf_glmrnn.nbins])
     
 # %%
 rnn_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations= "poisson", transitions="inputdriven")
 if driven_emission==1:
     rnn_glmhmm.observations = GLM_PoissonObservations(num_states, obs_dim, input_dim)
-fit_ll = rnn_glmhmm.fit(rnn_spikes, inputs=inpts, method="em", num_iters=N_iters)
+fit_ll = rnn_glmhmm.fit(rnn_spikes, inputs=rnn_inpts, method="em", num_iters=N_iters)
 #fit_ll = rnn_glmhmm.fit(true_spikes, inputs=inpts, method="em", num_iters=N_iters) #positive control...
 
+#### need to fill in padding gap
 # %% emissions
-rnn_glmhmm.permute(find_permutation(true_latents[0], rnn_glmhmm.most_likely_states(rnn_spikes[0], input=inpts[0])))
+rnn_glmhmm.permute(find_permutation(rnn_latents[0], rnn_glmhmm.most_likely_states(rnn_spikes[0], input=rnn_inpts[0])))
 true_obs_ws = true_glmhmm.observations.Wk #mus
 inferred_obs_ws = rnn_glmhmm.observations.Wk
 
@@ -217,14 +222,15 @@ plt.legend(fontsize=20)
 plt.title('Emission weights', fontsize=40)
 
 # %%
-rnn_glmhmm.permute(find_permutation(true_latents[0], rnn_glmhmm.most_likely_states(rnn_spikes[0], input=inpts[0])))
+ii = 39
+rnn_glmhmm.permute(find_permutation(rnn_latents[ii], rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=rnn_inpts[ii])))
 
 # %% latents
-ii = 0
-inferred_states = rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=(inpts[ii]))
+ii = 32
+inferred_states = rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=(rnn_inpts[ii]))
 plt.figure()
 plt.subplot(211)
-plt.imshow(true_latents[ii][None,:], aspect='auto')
+plt.imshow(rnn_latents[ii][None,:], aspect='auto')
 plt.title('true latent',fontsize=40)
 plt.subplot(212)
 plt.title('inferred latent',fontsize=40)

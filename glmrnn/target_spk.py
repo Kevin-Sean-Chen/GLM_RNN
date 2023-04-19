@@ -72,7 +72,7 @@ class target_spk(object):
         for tt in range(self.T-1):
             lamb = W @ rt[:,tt] + b + U*ipt[tt]
             spk[:,tt+1] = self.my_network.spiking(self.my_network.nonlinearity(lamb*self.my_network.dt/self.my_network.dt))
-            rt[:,tt+1] = self.my_network.kernel(rt[:,tt] , spk[:,tt]) + np.random.randn(self.N)*0.05
+            rt[:,tt+1] = self.my_network.kernel(rt[:,tt] , spk[:,tt]) + np.random.randn(self.N)*0.25
         return spk, ipt
     
     def _bump_matrix(self):

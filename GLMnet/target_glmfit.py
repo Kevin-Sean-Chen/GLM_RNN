@@ -39,13 +39,15 @@ my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_t
 d = 1  # latent dimension
 my_target = target_spk(N, T, d, my_glmrnn)
 
+#my_target.M = np.ones((N,1))
 # %% produce target spikes
 ### bistable, oscillation, chaotic, sequence, line_attractor, brunel_spk
 #targ_spk, targ_latent = my_target.sequence(50)
-targ_spk, targ_latent = my_target.chaotic()
+#targ_spk, targ_latent = my_target.chaotic()
 #targ_spk, targ_latent = my_target.bistable()
-#targ_spk, targ_latent = my_target.oscillation(50)
-#targ_spk, targ_latent = my_target.line_attractor(5)
+#targ_spk, targ_latent = my_target.oscillation(10)
+targ_spk, targ_latent = my_target.line_attractor(5)
+#targ_spk, targ_latent = my_target.brunel_spk('SR', 10)
 
 plt.figure()
 plt.imshow(targ_spk, aspect='auto')
@@ -70,9 +72,10 @@ num_sess = 10
 true_latents, true_spikes, true_ipt = [], [], []
 for sess in range(num_sess):
 #    true_y, true_z = my_target.bistable() #
-#    true_y, true_z = my_target.sequence(100)  # maybe fix this to pass latent type as string~
-#    true_y, true_z = my_target.oscillation(50)
+#    true_y, true_z = my_target.sequence(50)  # maybe fix this to pass latent type as string~
+#    true_y, true_z = my_target.oscillation(10)
     true_y, true_z = my_target.line_attractor(5)
+#    true_y, true_z = my_target.brunel_spk('SR', 10)  #SR, AI, SIf, SIs
     
     true_spikes.append(true_y.T)
 #    true_latents.append(true_z[:,None])
@@ -89,7 +92,7 @@ data = (true_spikes[iid].T, true_ipt[iid])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 5
+ii = 9
 spk,rt = my_glmrnn.forward(true_ipt[ii])
 plt.figure(figsize=(15,10))
 plt.subplot(121)
@@ -117,13 +120,14 @@ from glmrnn.rnn_torch import RNN, lowrank_RNN, observed_RNN, RNNTrainer
 import torch
 
 # %% setup target
-N = 50
+N = 10
 T = 200
 dt = 0.1
 tau = 1
-my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
+my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
 d = 1  # latent dimension
 my_target = target_spk(N, T, d, my_glmrnn)
+my_target.M = np.ones((N,1))
 
 num_sess = 100
 true_latents, true_spikes, true_ipt = [], [], []
@@ -132,10 +136,13 @@ inpts = np.repeat(inpts_[None,:-1,:], num_sess, axis=0)
 inpts = list(inpts)
 for sess in range(num_sess):
 #    true_y, true_z = my_target.sequence(20)  # maybe fix this to pass latent type as string~
-    true_y, true_z = my_target.chaotic()
+#    true_y, true_z = my_target.chaotic()
+#    true_y, true_z = my_target.oscillation(7)
+#    true_y, true_z = my_target.bistable()  # does NOT work!
+    true_y, true_z = my_target.line_attractor(5)
     true_r = my_glmrnn.kernel_filt(true_y)
     true_spikes.append(true_y.T)  # kernel filtered rate pattern
-    true_latents.append(true_r)
+    true_latents.append(true_r/np.max(true_r))  # normalization
     true_ipt.append(inpts[sess])
 
 # %% tensorize
@@ -146,8 +153,8 @@ inp = torch.Tensor(np.array(true_ipt))
 # %% training
 inf_net = observed_RNN(1, N, dt, 1) 
 masks = torch.ones(num_sess, T+0, N)
-trainer = RNNTrainer(inf_net, 'joint', spk_target=target_spikes)
-losses = trainer.train(inp, target_rates, masks, n_epochs=150, lr=1e-1, batch_size=10)
+trainer = RNNTrainer(inf_net, 'MSE', spk_target=target_spikes)
+losses = trainer.train(inp, target_rates, masks, n_epochs=150, lr=1e-1, batch_size=5)
 ### still need to fix poisson ll!
 
 plt.plot(np.arange(len(losses)), losses)
@@ -157,7 +164,7 @@ plt.ylabel('loss')
 plt.show()
 
 # %% generative with rate
-trid = 0
+trid = 9
 _, outputs_rt = inf_net.forward(inp)
 plt.figure()
 plt.imshow(outputs_rt[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
@@ -165,12 +172,12 @@ plt.figure()
 plt.imshow(target_rates[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
 
 # %% generative with spikes
-lamb = 20
+lamb = 5
 gen_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
 gen_glmrnn.W = inf_net.J.detach().numpy()*lamb
 gen_glmrnn.U = inf_net.B.detach().numpy().squeeze()*lamb
 gen_glmrnn.b = gen_glmrnn.b*lamb
-gen_glmrnn.lamb_max = 10
+gen_glmrnn.lamb_max = 20
 ii = 1
 spk,rt = gen_glmrnn.forward(inp[ii].detach().numpy())
 plt.figure(figsize=(15,10))

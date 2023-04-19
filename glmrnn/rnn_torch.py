@@ -182,7 +182,7 @@ class observed_RNN(nn.Module):
         with torch.no_grad():  # this is to say that initialization will not be considered when computing the gradient later on
             self.B.normal_()
 #            self.W.normal_(std=1. / np.sqrt(self.N))
-            self.W = torch.eye(N)
+            self.W = torch.eye(N)*1
             self.J.normal_(std=init_std / np.sqrt(self.N))
             
     def forward(self, inp, initial_state=None):
@@ -200,7 +200,7 @@ class observed_RNN(nn.Module):
         """
      
         n_trials = inp.shape[0]
-        T = inp.shape[1]-1  # duration of the trial
+        T = inp.shape[1]-0  # duration of the trial
         x_seq = torch.zeros((n_trials, T + 1, self.N)) # this will contain the sequence of voltage throughout the trial for the whole population
         # by default the network starts with x_i=0 at time t=0 for all neurons
         if initial_state is not None:

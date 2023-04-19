@@ -37,6 +37,7 @@ class glmrnn:
         self.U = np.random.randn(N)*0.1  # initial input vector
         self.data = [] 
         self.K = 2 # number of states for state-transitions
+        self.nbins = 1  # default
         if kernel_type=='basis':
             nbasis = 2
             self.nbasis = nbasis  # number of basis functions
@@ -271,7 +272,7 @@ class glmrnn:
             state_cost = -np.sum(onehot * lp_states)  
             return -ll + state_cost
         
-    def neg_log_likelihood_kernel(self, ww, spk, rt=None, ipt=None, lamb=0):
+    def neg_log_likelihood_kernel(self, ww, spk, rt=None, ipt=None, lamb=10):
         """
         Negative log-likelihood function for interacting kernel functions
         I: parameter vector, spike train, and regularization
