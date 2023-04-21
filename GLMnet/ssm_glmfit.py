@@ -28,7 +28,7 @@ matplotlib.rc('ytick', labelsize=30)
 
 # %%
 num_states = 2        # number of discrete states           K
-obs_dim = 3           # number of observed dimensions       D
+obs_dim = 5           # number of observed dimensions       D
 input_dim = 1         # input dimensions                    M
 
 # Make a GLM-HMM
@@ -45,10 +45,10 @@ drive_logic = np.min([driven_emission+driven_state,1])
 # %%  replace from here for now
 if driven_emission==1:
     true_glmhmm.observations = GLM_PoissonObservations(num_states, obs_dim, input_dim)
-    true_glmhmm.observations.Wk *= 5.
+    true_glmhmm.observations.Wk *= 3.
     print(true_glmhmm.observations.Wk.shape)
 if driven_state==1 :
-    true_glmhmm.transitions.Ws *= 5.
+    true_glmhmm.transitions.Ws *= 3.
     print(true_glmhmm.transitions.Ws)
 else:
     print(true_glmhmm.transitions.transition_matrix)
@@ -77,10 +77,10 @@ inpts = list(inpts) #convert inpts to correct format
 # different for each session
 inpts = []
 for ii in range(num_sess):
-#    inpt_ = np.arange(0,time_len,1)[:,None]/time_len + .1*npr.randn(time_len,input_dim)*1 # noisy ramp
-    inpt_ = np.sin(2*np.pi*np.arange(time_len)/600)[:,None]*.1 +\
-        np.cos(2*np.pi*np.arange(time_len)/200)[:,None]*.1 +\
-        .1*npr.randn(time_len,input_dim)*.5
+    inpt_ = np.arange(0,time_len,1)[:,None]/time_len*0.2 + .1*npr.randn(time_len,input_dim)*1 # noisy ramp
+#    inpt_ = np.sin(2*np.pi*np.arange(time_len)/600)[:,None]*.1 +\
+#        np.cos(2*np.pi*np.arange(time_len)/200)[:,None]*.1 +\
+#        .1*npr.randn(time_len,input_dim)*.5
     inpts.append(inpt_)
 
 # %%
@@ -144,7 +144,7 @@ except:
 N = obs_dim*1
 T = time_len*1
 dt = 0.1
-tau = 1
+tau = 2
 
 spk_targ = true_spikes[0].T
 my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
@@ -164,6 +164,7 @@ my_glmrnn.fit_single(data,lamb=0)
 # %% test with batch
 #inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
 inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
+inf_glmrnn.lamb_max = 100
 #datas = ([true_spikes[0]], [inpts[0]])  # debug this~~~   # might be 'dt'??
 datas = (true_spikes, inpts)
 #my_glmrnn.fit_batch(datas)  # using regression tools
@@ -171,15 +172,15 @@ datas = (true_spikes, inpts)
 inf_glmrnn.fit_glm(datas)#, num_iters=1)  # using ssm gradient
 
 # %%
-ii = 1
+ii = 0
 spk,rt = inf_glmrnn.forward(inpts[ii]*1)
 #spk,rt = my_glmrnn.forward(inpts[ii])
-plt.figure(figsize=(20,10))
+plt.figure(figsize=(20,7))
 plt.subplot(121)
 plt.imshow(true_spikes[ii].T,aspect='auto')
 plt.title('true spikes',fontsize=40)
 plt.subplot(122)
-plt.imshow(spk,aspect='auto')
+plt.imshow(spk,aspect='auto',interpolation=None)
 plt.title('inferred spikes',fontsize=40)
 
 # %% test states
@@ -208,25 +209,24 @@ fit_ll = rnn_glmhmm.fit(rnn_spikes, inputs=rnn_inpts, method="em", num_iters=N_i
 #fit_ll = rnn_glmhmm.fit(true_spikes, inputs=inpts, method="em", num_iters=N_iters) #positive control...
 
 #### need to fill in padding gap
+# %%
+ii = 1
+rnn_glmhmm.permute(find_permutation(rnn_latents[ii], rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=rnn_inpts[ii])))
+
 # %% emissions
-rnn_glmhmm.permute(find_permutation(rnn_latents[0], rnn_glmhmm.most_likely_states(rnn_spikes[0], input=rnn_inpts[0])))
 true_obs_ws = true_glmhmm.observations.Wk #mus
 inferred_obs_ws = rnn_glmhmm.observations.Wk
 
 cols = ['r', 'g', 'b']
-plt.figure()
+plt.figure(figsize=(10,7))
 for ii in range(num_states):
     plt.plot(true_obs_ws[:][ii],linewidth=5, label='ture', color=cols[ii])
     plt.plot(inferred_obs_ws[:][ii],'--',linewidth=5,label='inferred',color=cols[ii])
 plt.legend(fontsize=20)
-plt.title('Emission weights', fontsize=40)
-
-# %%
-ii = 39
-rnn_glmhmm.permute(find_permutation(rnn_latents[ii], rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=rnn_inpts[ii])))
+plt.title('Emission weights', fontsize=30)
 
 # %% latents
-ii = 32
+ii = 10
 inferred_states = rnn_glmhmm.most_likely_states(rnn_spikes[ii], input=(rnn_inpts[ii]))
 plt.figure()
 plt.subplot(211)
@@ -236,6 +236,25 @@ plt.subplot(212)
 plt.title('inferred latent',fontsize=40)
 plt.imshow(inferred_states[None,:], aspect="auto")
 
+# %% transition
+true_glmhmm.transitions.Ws
+true_trans_ws = true_glmhmm.transitions.Ws
+inferred_trans_ws = rnn_glmhmm.transitions.Ws
+    
+plt.figure()
+for ii in range(num_states):
+    plt.plot(true_trans_ws[ii],'*',markersize=15, label='ture', color=cols[ii])
+    plt.plot(inferred_trans_ws[ii],'o',markersize=15,label='inferred', color=cols[ii])
+plt.legend(fontsize=15)
+plt.title('Transition weights', fontsize=30)
+
+plt.figure(figsize=(10,5))
+plt.subplot(121)
+plt.imshow(true_glmhmm.transitions.transition_matrix)
+plt.title('true transition', fontsize=25)
+plt.subplot(122) 
+plt.imshow(rnn_glmhmm.transitions.transition_matrix)
+plt.title('inferred transition', fontsize=25)
 
 # %% try RNN approach joint with state-transition targets.
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

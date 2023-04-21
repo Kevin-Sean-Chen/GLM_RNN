@@ -46,20 +46,26 @@ my_target = target_spk(N, T, d, my_glmrnn)
 #targ_spk, targ_latent = my_target.chaotic()
 #targ_spk, targ_latent = my_target.bistable()
 #targ_spk, targ_latent = my_target.oscillation(10)
-targ_spk, targ_latent = my_target.line_attractor(5)
+#targ_spk, targ_latent = my_target.line_attractor(5)
 #targ_spk, targ_latent = my_target.brunel_spk('SR', 10)
+
+prob = 0.5
+targ_spk, targ_latent = my_target.stochastic_rate(prob)
 
 plt.figure()
 plt.imshow(targ_spk, aspect='auto')
 
 # %% test with random input
 #input sequence
-num_sess = 10 # number of example sessions
+num_sess = 50 # number of example sessions
 input_dim = 1
 inpts_ = np.sin(2*np.pi*np.arange(T)/600)[:,None]*.5 +\
         np.cos(2*np.pi*np.arange(T)/300)[:,None]*1. +\
         .1*npr.randn(T,input_dim)\
         + np.linspace(-2,2,T)[:,None]
+
+inpts_ = np.zeros(T)[:,None]
+inpts_[int(T/2):] = prob
 
 inpts = np.repeat(inpts_[None,:,:], num_sess, axis=0)
 inpts = list(inpts) #convert inpts to correct format
@@ -68,14 +74,14 @@ inpts = list(inpts) #convert inpts to correct format
 # test with 'clock' signal for autonomous system
 ###
 # %% generate training sets
-num_sess = 10
 true_latents, true_spikes, true_ipt = [], [], []
 for sess in range(num_sess):
 #    true_y, true_z = my_target.bistable() #
 #    true_y, true_z = my_target.sequence(50)  # maybe fix this to pass latent type as string~
 #    true_y, true_z = my_target.oscillation(10)
-    true_y, true_z = my_target.line_attractor(5)
+#    true_y, true_z = my_target.line_attractor(5)
 #    true_y, true_z = my_target.brunel_spk('SR', 10)  #SR, AI, SIf, SIs
+    true_y, true_z = my_target.stochastic_rate(.2)
     
     true_spikes.append(true_y.T)
 #    true_latents.append(true_z[:,None])
@@ -92,7 +98,7 @@ data = (true_spikes[iid].T, true_ipt[iid])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 9
+ii = 5
 spk,rt = my_glmrnn.forward(true_ipt[ii])
 plt.figure(figsize=(15,10))
 plt.subplot(121)
@@ -172,7 +178,7 @@ plt.figure()
 plt.imshow(target_rates[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
 
 # %% generative with spikes
-lamb = 5
+lamb = 10
 gen_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
 gen_glmrnn.W = inf_net.J.detach().numpy()*lamb
 gen_glmrnn.U = inf_net.B.detach().numpy().squeeze()*lamb

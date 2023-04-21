@@ -136,6 +136,20 @@ class target_spk(object):
         z_dot = x*y - b*z
         return np.array([x_dot, y_dot, z_dot])
     
+    def stochastic_rate(self, ipt):
+        """
+        ipt: [0,1]
+        Step input in the later half that flips firing rate probablisticlity
+        """
+        latent = np.ones(self.T)*0.1
+        prob = np.random.rand()
+        if prob > ipt:
+            latent[int(self.T/2):] = 1
+        else:
+            latent[int(self.T/2):] = -1
+        spk = self._forward(latent)
+        return spk, latent
+    
     def brunel_spk(self, phase, lk):
         """
         Latent-driven Poisson spiking patterns to mimic Bruenl 2000 firing patterns,
