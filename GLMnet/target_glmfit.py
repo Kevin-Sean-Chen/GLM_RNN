@@ -24,6 +24,8 @@ import numpy.random as npr
 from glmrnn.glmrnn import glmrnn
 from glmrnn.target_spk import target_spk
 
+from sklearn.cluster import KMeans
+
 import matplotlib 
 matplotlib.rc('xtick', labelsize=30) 
 matplotlib.rc('ytick', labelsize=30)
@@ -49,7 +51,7 @@ my_target = target_spk(N, T, d, my_glmrnn)
 #targ_spk, targ_latent = my_target.line_attractor(5)
 #targ_spk, targ_latent = my_target.brunel_spk('SR', 10)
 
-prob = 0.5
+prob = 0.9
 targ_spk, targ_latent = my_target.stochastic_rate(prob)
 
 plt.figure()
@@ -57,7 +59,7 @@ plt.imshow(targ_spk, aspect='auto')
 
 # %% test with random input
 #input sequence
-num_sess = 50 # number of example sessions
+num_sess = 100 # number of example sessions
 input_dim = 1
 inpts_ = np.sin(2*np.pi*np.arange(T)/600)[:,None]*.5 +\
         np.cos(2*np.pi*np.arange(T)/300)[:,None]*1. +\
@@ -66,6 +68,8 @@ inpts_ = np.sin(2*np.pi*np.arange(T)/600)[:,None]*.5 +\
 
 inpts_ = np.zeros(T)[:,None]
 inpts_[int(T/2):] = prob
+inpts_50 = np.zeros(T)[:,None]
+inpts_50[int(T/2):] = 0.5
 
 inpts = np.repeat(inpts_[None,:,:], num_sess, axis=0)
 inpts = list(inpts) #convert inpts to correct format
@@ -81,7 +85,7 @@ for sess in range(num_sess):
 #    true_y, true_z = my_target.oscillation(10)
 #    true_y, true_z = my_target.line_attractor(5)
 #    true_y, true_z = my_target.brunel_spk('SR', 10)  #SR, AI, SIf, SIs
-    true_y, true_z = my_target.stochastic_rate(.2)
+    true_y, true_z = my_target.stochastic_rate(prob)
     
     true_spikes.append(true_y.T)
 #    true_latents.append(true_z[:,None])
@@ -98,7 +102,7 @@ data = (true_spikes[iid].T, true_ipt[iid])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 5
+ii = 0
 spk,rt = my_glmrnn.forward(true_ipt[ii])
 plt.figure(figsize=(15,10))
 plt.subplot(121)
@@ -116,9 +120,26 @@ datas = (true_spikes, true_ipt)
 my_glmrnn.fit_glm(datas)  # using ssm gradient
 
 # %% test states
-datas = (true_spikes, true_ipt, true_latents)
-my_glmrnn.fit_glm_states(datas,2)
+#datas = (true_spikes, true_ipt, true_latents)
+#my_glmrnn.fit_glm_states(datas,2)
 ###
+
+# %% spiking pattern analysis
+rep = 300
+sim_spk = []
+#sim_rt = []
+pattern_spk = []
+for rr in range(rep):
+    spk,_ = my_glmrnn.forward(true_ipt[0])  # fixed or vary across trials
+    sim_spk.append(spk)
+    spk50,_ = my_glmrnn.forward(inpts_50)  # for comparison
+    pattern_spk.append(spk50)
+    
+X_rand = np.array(pattern_spk).reshape(rep,-1)
+X_test = np.array(sim_spk).reshape(rep,-1)
+kmeans = KMeans(n_clusters=2, random_state=0).fit(X_rand)  # fit cluster to 50/50 case
+predvec = kmeans.predict(X_test)  # test with biased generative model
+print(np.sum(predvec)/rep)
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # %% use rate RNN and Poisson log-likelihood
@@ -146,6 +167,8 @@ for sess in range(num_sess):
 #    true_y, true_z = my_target.oscillation(7)
 #    true_y, true_z = my_target.bistable()  # does NOT work!
     true_y, true_z = my_target.line_attractor(5)
+    true_y, true_z = my_target.stochastic_rate(prob)
+    
     true_r = my_glmrnn.kernel_filt(true_y)
     true_spikes.append(true_y.T)  # kernel filtered rate pattern
     true_latents.append(true_r/np.max(true_r))  # normalization
@@ -178,7 +201,7 @@ plt.figure()
 plt.imshow(target_rates[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
 
 # %% generative with spikes
-lamb = 10
+lamb = 5
 gen_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
 gen_glmrnn.W = inf_net.J.detach().numpy()*lamb
 gen_glmrnn.U = inf_net.B.detach().numpy().squeeze()*lamb
