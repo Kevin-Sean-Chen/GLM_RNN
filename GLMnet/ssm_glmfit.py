@@ -147,8 +147,8 @@ dt = 0.1
 tau = 2
 
 spk_targ = true_spikes[0].T
-my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
-#my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
+#my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
+my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
 spk,rt = my_glmrnn.forward(inpts[0])
 
 # %% try generating and infereing with same structure!
@@ -162,8 +162,8 @@ data = (spk_targ, inpts[0])
 my_glmrnn.fit_single(data,lamb=0)
 
 # %% test with batch
-#inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
-inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
+inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
+#inf_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='sigmoid', spk_type="Poisson")
 inf_glmrnn.lamb_max = 100
 #datas = ([true_spikes[0]], [inpts[0]])  # debug this~~~   # might be 'dt'??
 datas = (true_spikes, inpts)

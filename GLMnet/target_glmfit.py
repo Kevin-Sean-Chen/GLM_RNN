@@ -31,17 +31,20 @@ matplotlib.rc('xtick', labelsize=30)
 matplotlib.rc('ytick', labelsize=30)
 
 # %% setup network parameters
-N = 10
+N = 5
 T = 200
 dt = 0.1
 tau = 2
 ### setup network
 my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
+#my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='basis', nl_type='sigmoid', spk_type="Poisson")
 ### setup target spike pattern
 d = 1  # latent dimension
 my_target = target_spk(N, T, d, my_glmrnn)
 
-#my_target.M = np.ones((N,1))
+#my_target.M = np.ones((N,1))*3
+my_target.M *= 2#.5
+my_glmrnn.lamb_max = 10
 # %% produce target spikes
 ### bistable, oscillation, chaotic, sequence, line_attractor, brunel_spk
 #targ_spk, targ_latent = my_target.sequence(50)
@@ -51,7 +54,7 @@ my_target = target_spk(N, T, d, my_glmrnn)
 #targ_spk, targ_latent = my_target.line_attractor(5)
 #targ_spk, targ_latent = my_target.brunel_spk('SR', 10)
 
-prob = 0.9
+prob = 0.8
 targ_spk, targ_latent = my_target.stochastic_rate(prob)
 
 plt.figure()
@@ -99,11 +102,16 @@ for sess in range(num_sess):
 # %% inference
 iid = 1
 data = (true_spikes[iid].T, true_ipt[iid])
+my_glmrnn.lamb = 0
 my_glmrnn.fit_single(data,lamb=0)
 
 # %%
-ii = 0
-spk,rt = my_glmrnn.forward(true_ipt[ii])
+ii = 5
+#spk,rt = my_glmrnn.forward(true_ipt[ii])
+my_glmrnn.noise = my_glmrnn.b*2. #np.mean(true_spikes[0],0)*9 #
+#my_glmrnn.W *= 5
+spk,rt = my_glmrnn.forward_rate(true_ipt[ii])
+
 plt.figure(figsize=(15,10))
 plt.subplot(121)
 plt.imshow(true_spikes[ii].T,aspect='auto')
@@ -125,21 +133,36 @@ my_glmrnn.fit_glm(datas)  # using ssm gradient
 ###
 
 # %% spiking pattern analysis
-rep = 300
+def pattern_m(r1,r2):
+#    temp = r1*r2
+    v1,v2 = r1.reshape(-1), r2.reshape(-1)
+    m = np.corrcoef(v1,v2)[0][1]
+    return m
+rep = 100
 sim_spk = []
 #sim_rt = []
 pattern_spk = []
+m_pattern = []  # overlap for two patterns across sessions
 for rr in range(rep):
-    spk,_ = my_glmrnn.forward(true_ipt[0])  # fixed or vary across trials
+    spk,rt = my_glmrnn.forward(true_ipt[0])  # fixed or vary across trials
     sim_spk.append(spk)
-    spk50,_ = my_glmrnn.forward(inpts_50)  # for comparison
+    spk50,rt50 = my_glmrnn.forward(inpts_50)  # for comparison
     pattern_spk.append(spk50)
+    template = true_spikes[rr].T
+    m_pattern.append(pattern_m(spk[:,T//2:], template[:,T//2:])) ### fix this...should sort then compute
     
 X_rand = np.array(pattern_spk).reshape(rep,-1)
 X_test = np.array(sim_spk).reshape(rep,-1)
 kmeans = KMeans(n_clusters=2, random_state=0).fit(X_rand)  # fit cluster to 50/50 case
 predvec = kmeans.predict(X_test)  # test with biased generative model
 print(np.sum(predvec)/rep)
+
+# %%
+plt.hist(np.array(m_pattern))
+plt.xlabel('pattern correlation',fontsize=30)
+plt.ylabel('count', fontsize=30)
+
+# %% long-term simulation with trained network
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # %% use rate RNN and Poisson log-likelihood
@@ -154,7 +177,7 @@ tau = 1
 my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_type="Poisson")
 d = 1  # latent dimension
 my_target = target_spk(N, T, d, my_glmrnn)
-my_target.M = np.ones((N,1))
+#my_target.M = np.ones((N,1))
 
 num_sess = 100
 true_latents, true_spikes, true_ipt = [], [], []
@@ -193,7 +216,7 @@ plt.ylabel('loss')
 plt.show()
 
 # %% generative with rate
-trid = 9
+trid = 2
 _, outputs_rt = inf_net.forward(inp)
 plt.figure()
 plt.imshow(outputs_rt[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')

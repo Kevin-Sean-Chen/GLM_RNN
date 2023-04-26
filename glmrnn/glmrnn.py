@@ -44,6 +44,7 @@ class glmrnn:
             nbins = int(np.floor(tau/dt))
             self.nbins = nbins  # time window tiled
             self.W = np.random.randn(N,N,nbasis)*0.1  # tensor with kernel weights
+        self.lamb = 0  # regularization
         
     def forward(self, ipt=None):
         """
@@ -55,8 +56,8 @@ class glmrnn:
             spk = np.zeros((self.N, self.T))
             rt = np.zeros((self.N, self.T))
             for tt in range(self.T-1):
-                lamb = self.W @ rt[:,tt] + self.b + self.U*ipt[tt]
-                spk[:,tt] = self.spiking(self.nonlinearity(lamb)*self.dt)
+                subthreshold = self.W @ rt[:,tt] + self.b + self.U*ipt[tt]
+                spk[:,tt] = self.spiking(self.nonlinearity(subthreshold)*self.dt)
                 rt[:,tt+1] = self.kernel(rt[:,tt] , spk[:,tt])
     #        self.data = (spk,rt,ipt)
             if self.spk_type=='Gaussian':
@@ -80,6 +81,18 @@ class glmrnn:
             rt = rt[:,self.nbins:]
         return spk.astype(int), rt
     
+    def forward_rate(self, ipt=None):
+        if ipt is None:
+            ipt = np.zeros(self.T)
+        xt = np.zeros((self.N, self.T))
+        rt = np.zeros((self.N, self.T))
+        for tt in range(self.T-1):
+            xt[:,tt+1] = (1-self.dt/self.tau)*xt[:,tt] + self.dt*( \
+                          self.W @ rt[:,tt] + self.b + self.U*ipt[tt]) \
+                          + np.random.randn(self.N)*np.sqrt(self.dt)*self.noise
+            rt[:,tt+1] = self.nonlinearity(xt[:,tt+1]*self.dt)
+        return xt, rt
+    
     def nonlinearity(self, x):
         """
         Nonlinearity for spiking function
@@ -91,7 +104,7 @@ class glmrnn:
         if self.nl_type=='log-linear':
             nl = np.log((1+np.exp(x))+eps)
         if self.nl_type=='sigmoid':
-            nl = (self.lamb_max-self.lamb_min)/(1+np.exp(-x)) + self.lamb_min    
+            nl = (self.lamb_max-self.lamb_min)/(1+np.exp(-x*0.1)) + self.lamb_min    
         return nl
     
     def spiking(self, nl):
@@ -232,14 +245,14 @@ class glmrnn:
             b,U,W = self.vec2param(ww)
             ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
                     - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
-                    - lamb*np.linalg.norm(W)
+                    - self.lamb*np.linalg.norm(W)
             return -ll
         elif state is not None:
             b,U,W,ws = self.vec2param(ww, True)
 #            ws = ww[-(self.K*self.N):].reshape(self.K, self.N)  #state readout weights
             ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
                     - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
-                    - lamb*np.linalg.norm(W)
+                    - self.lamb*np.linalg.norm(W)
             lp_states = ws @ rt #np.exp(ws @ rt_true) #
             # lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
             lp_states = lp_states - logsumexp(lp_states,0)[None,:]  # logP
@@ -257,14 +270,14 @@ class glmrnn:
             b,W = self.vec2param(ww,ipt=False)
             ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None]) + eps) \
                     - self.nonlinearity(W @ rt + b[:,None])*self.dt) \
-                    - lamb*np.linalg.norm(W)
+                    - self.lamb*np.linalg.norm(W)
             return -ll        
         elif state is not None:
             b,U,W,ws = self.vec2param(ww, state=True,ipt=True)
 #            ws = ww[-(self.K*self.N):].reshape(self.K, self.N)  #state readout weights
             ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None])+eps) \
                     - self.nonlinearity(W @ rt + b[:,None])*self.dt) \
-                    - lamb*np.linalg.norm(W)
+                    - self.lamb*np.linalg.norm(W)
             lp_states = ws @ rt #np.exp(ws @ rt_true) #
             # lp_states = lp_states / lp_states.sum(0)[None,:]  # P of class probablity
             lp_states = lp_states - logsumexp(lp_states,0)[None,:]  # logP
@@ -281,14 +294,14 @@ class glmrnn:
         # unpack parameters
 #        b, U, Wijk = self.vec2param_kernel(ww, full_kernel=True)
 #        _,_,W = self.vec2param_kernel(ww, full_kernel=False)
-#        lamb = self.kernel_filt(spk, Wijk) + b[:,None] + U[:,None]*ipt.T
+#        subthreshold = self.kernel_filt(spk, Wijk) + b[:,None] + U[:,None]*ipt.T
         b = ww[:self.N]
         U = ww[self.N:self.N*2]
         W = ww[self.N*2:]
-        lamb = self.design_matrix_proj(spk, W) + b[:,None] + U[:,None]*ipt.T
-        ll = np.sum(spk * np.log(self.nonlinearity(lamb)+eps) \
-                    - self.nonlinearity(lamb)*self.dt) \
-                    - lamb*np.linalg.norm(W)
+        subthreshold = self.design_matrix_proj(spk, W) + b[:,None] + U[:,None]*ipt.T
+        ll = np.sum(spk * np.log(self.nonlinearity(subthreshold)+eps) \
+                    - self.nonlinearity(subthreshold)*self.dt) \
+                    - self.lamb*np.linalg.norm(W)
         return -ll
            
     def state2onehot(self, states, K=None):
