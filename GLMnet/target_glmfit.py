@@ -54,7 +54,7 @@ my_glmrnn.lamb_max = 10
 #targ_spk, targ_latent = my_target.line_attractor(5)
 #targ_spk, targ_latent = my_target.brunel_spk('SR', 10)
 
-prob = 0.8
+prob = 0.5
 targ_spk, targ_latent = my_target.stochastic_rate(prob)
 
 plt.figure()
@@ -125,6 +125,8 @@ plt.title('inferred spikes',fontsize=40)
 datas = (true_spikes, true_ipt)
 #my_glmrnn.fit_batch(datas)  # using regression tools
 #my_glmrnn.fit_batch_sp(datas)  # this seems to currently work!!...but take too long
+my_glmrnn.T = 200
+my_glmrnn.lamb = 2
 my_glmrnn.fit_glm(datas)  # using ssm gradient
 
 # %% test states
@@ -163,6 +165,22 @@ plt.xlabel('pattern correlation',fontsize=30)
 plt.ylabel('count', fontsize=30)
 
 # %% long-term simulation with trained network
+# hypothesis: switching states responding to the same input!!
+rep_stim = 20
+long_ipt = np.tile(true_ipt[0]*1,rep_stim).T.reshape(-1)[:,None]
+my_glmrnn.T = len(long_ipt)
+spk, rt = my_glmrnn.forward(long_ipt)
+plt.figure(figsize=(15,10))
+plt.subplot(4,1,(1,3))
+plt.imshow(spk, aspect='auto')
+plt.subplot(4,1,4)
+plt.plot(long_ipt)
+plt.xlim([0,len(long_ipt)])
+
+###
+# current important factors: training probablity, regulairzation, and maybe latents!?
+# analysis with tuning curves and state-space fitting
+###
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # %% use rate RNN and Poisson log-likelihood
