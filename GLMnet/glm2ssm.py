@@ -24,6 +24,7 @@ from glmrnn.glmrnn import glmrnn
 from glmrnn.target_spk import target_spk
 
 from sklearn.cluster import KMeans
+from sklearn.linear_model import LogisticRegression
 import random
 
 import matplotlib 
@@ -41,8 +42,8 @@ my_glmrnn = glmrnn(N, T, dt, tau, kernel_type='tau', nl_type='log-linear', spk_t
 d = 1  # latent dimension
 my_target = target_spk(N, T, d, my_glmrnn)
 
-#my_target.M = np.ones((N,1))*3
-my_target.M *= 2#.5
+my_target.M = np.linspace(1,-1,N)[:,None]*3 #(np.ones((N,1))*3
+#my_target.M *= 2#.5
 
 # %% produce target spikes
 prob = 0.5
@@ -85,11 +86,11 @@ for sess in range(num_sess):
 # %% inference
 datas = (true_spikes, true_ipt)
 my_glmrnn.T = 200
-my_glmrnn.lamb = 2
+my_glmrnn.lamb = 3
 my_glmrnn.fit_glm(datas)  # using ssm gradient
 
 # %%
-ii = 0
+ii = 1
 spk,rt = my_glmrnn.forward(true_ipt[ii]*1)
 #my_glmrnn.noise = my_glmrnn.b*2. #np.mean(true_spikes[0],0)*9 #
 #my_glmrnn.W *= 5
@@ -114,7 +115,7 @@ sim_spk = []
 pattern_spk = []
 m_pattern = []  # overlap for two patterns across sessions
 for rr in range(rep):
-    spk,rt = my_glmrnn.forward(true_ipt[150])  # fixed or vary across trials
+    spk,rt = my_glmrnn.forward(true_ipt[-1])  # fixed or vary across trials
     sim_spk.append(spk)
     spk50,rt50 = my_glmrnn.forward(inpts_50)  # for comparison
     pattern_spk.append(spk50)
@@ -168,7 +169,7 @@ for rr in range(rep):
     inpts_ssm.append(long_ipt)
     
 # %% inference
-num_states = 2
+num_states = 3
 obs_dim = N*1
 input_dim = 1
 inf_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations= "poisson", transitions="inputdriven")
@@ -182,8 +183,8 @@ posterior_probs = [inf_glmhmm.expected_states(data=data, input=inpt)[0]
                 for data, inpt
                 in zip(true_spikes_ssm, inpts_ssm)]
 
-# %%
-sess_id = 1 #session id; can choose any index between 0 and num_sess-1
+# %% posterior states
+sess_id = 5 #session id; can choose any index between 0 and num_sess-1
 plt.figure(figsize=(15,10))
 for k in range(num_states):
     plt.plot(posterior_probs[sess_id][:, k], label="State " + str(k + 1), lw=2)
@@ -204,3 +205,43 @@ plt.plot(inf_glmhmm.observations.Wk[:,:,0].T)
 plt.xlabel('neuron', fontsize=30)
 plt.ylabel('weights', fontsize=30)
 plt.legend(['state 1', 'state 2'], fontsize=20)
+
+# %% build behavioral classifier
+spk_up, spk_down = [], []
+rep = 10
+for sess in range(rep):
+    true_y, true_z = my_target.stochastic_rate(1)
+    spk_up.append(true_y[:,T//2:].T)
+    true_y, true_z = my_target.stochastic_rate(0)
+    spk_down.append(true_y[:,T//2:].T)
+    
+spk_up = np.array(spk_up).reshape(-1,N)
+spk_down = np.array(spk_down).reshape(-1,N)
+X = np.concatenate((spk_up, spk_down))
+y = np.concatenate((np.ones(T*rep//2), np.zeros(T*rep//2)))
+clf = LogisticRegression(random_state=0).fit(X, y) ### now clf takes N cell input and outputs label
+#clf.predict(X[:2, :])
+def log_reg_network(x_):
+    return clf.predict(x_)
+
+# %% state-dependent psychometrics
+ipt_vals = np.array([0.25, 0.5, 0.75])
+state_psyc = np.zeros((num_states, len(ipt_vals)))  # state x stim
+keep_n = state_psyc*0
+for ss in range(rep):  # session loop
+    post = posterior_probs[ss]  # pick session
+    for kk in range(num_states):  # state loop
+        pos_state = np.where(np.argmax(post,1)==kk)[0]  # pick state
+        for ii in range(len(ipt_vals)):  # stimuli loop
+            pos_stim = np.where(inpts_ssm[ss]==ipt_vals[ii])[0]  # pick stimuli
+            pos_stim_state = np.intersect1d(pos_stim, pos_state)  # state and stimuli joint
+            if len(pos_stim_state)>0:  # not empty
+                response = true_spikes_ssm[ss][pos_stim_state,:]
+                # use logsitic regresion here to output choice from pattern
+                choice_t = log_reg_network(response)
+                num_choice = len(np.where(choice_t==1)[0]) / len(pos_stim_state)
+                ### normalized by session for proper probability
+                state_psyc[kk, ii] += num_choice ### still need to normalize for probability
+                keep_n[kk,ii] += 1
+state_psyc /= keep_n
+plt.plot(ipt_vals, state_psyc.T,'-o')
