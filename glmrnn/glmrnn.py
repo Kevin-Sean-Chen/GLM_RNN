@@ -245,7 +245,8 @@ class glmrnn:
             b,U,W = self.vec2param(ww)
             ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
                     - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
-                    - self.lamb*np.linalg.norm(W)
+                    - self.lamb*(np.linalg.norm(W) + np.linalg.norm(U))
+#                    - self.lamb*np.linalg.norm(W)
             return -ll
         elif state is not None:
             b,U,W,ws = self.vec2param(ww, True)
