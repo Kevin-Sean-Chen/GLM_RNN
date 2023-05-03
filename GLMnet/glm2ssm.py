@@ -50,9 +50,9 @@ prob = 0.5
 M = np.random.randn(N,N)
 uu,ss,vv = np.linalg.svd(M)
 scale = 5  # loading strength
-eps = 0.  # disengage states
+eps = 0.2  # disengage states
 m1,m2 = uu[:,0]*5, uu[:,1]*5
-targ_spk, targ_latent = my_target.stochastic_rate(prob, (m1,m2), eps)
+targ_spk, targ_latent = my_target.stochastic_rate(prob)  #, (m1,m2), eps)
 
 plt.figure()
 plt.imshow(targ_spk, aspect='auto')
@@ -72,17 +72,17 @@ inpts = list(inpts) #convert inpts to correct format
 # %% generate training sets
 true_latents, true_spikes, true_ipt = [], [], []
 for sess in range(num_sess):
-    true_y, true_z = my_target.stochastic_rate(prob, (m1,m2), eps)
+    true_y, true_z = my_target.stochastic_rate(prob) #, (m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
     true_ipt.append(inpts[sess])
     
     ### for mixed learning
-    true_y, true_z = my_target.stochastic_rate(0.8, (m1,m2), eps)
+    true_y, true_z = my_target.stochastic_rate(0.8) #, (m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
     true_ipt.append(inpts_50*2 *0.8)
-    true_y, true_z = my_target.stochastic_rate(0.2, (m1,m2), eps)
+    true_y, true_z = my_target.stochastic_rate(0.2) #, (m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
     true_ipt.append(inpts_50*2 *0.2)  
@@ -97,11 +97,12 @@ for sess in range(num_sess):
 # %% inference
 datas = (true_spikes, true_ipt)
 my_glmrnn.T = 200
-my_glmrnn.lamb = 3
+my_glmrnn.lamb = 1
+my_glmrnn.lamb2 = 0.1
 my_glmrnn.fit_glm(datas)  # using ssm gradient
 
 # %%
-ii = 3
+ii = 0
 spk,rt = my_glmrnn.forward(true_ipt[ii]*1)
 #my_glmrnn.noise = my_glmrnn.b*2. #np.mean(true_spikes[0],0)*9 #
 #my_glmrnn.W *= 5
@@ -126,7 +127,7 @@ sim_spk = []
 pattern_spk = []
 m_pattern = []  # overlap for two patterns across sessions
 for rr in range(rep):
-    spk,rt = my_glmrnn.forward(true_ipt[150])  # fixed or vary across trials
+    spk,rt = my_glmrnn.forward(true_ipt[-1])  # fixed or vary across trials
     sim_spk.append(spk)
     spk50,rt50 = my_glmrnn.forward(inpts_50)  # for comparison
     pattern_spk.append(spk50)
@@ -147,7 +148,7 @@ plt.ylabel('count', fontsize=30)
 # %% long-term simulation with trained network
 # hypothesis: switching states responding to the same input!!
 rep_stim = 20
-long_ipt = np.tile(true_ipt[-1]*1,rep_stim).T.reshape(-1)[:,None]
+long_ipt = np.tile(true_ipt[0]*1,rep_stim).T.reshape(-1)[:,None]
 #long_ipt = np.array(random.sample(true_ipt, rep_stim)).reshape(-1)[:,None]
 my_glmrnn.T = len(long_ipt)
 spk, rt = my_glmrnn.forward(long_ipt)
@@ -186,7 +187,7 @@ for rr in range(rep):
 num_states = 3
 obs_dim = N*1
 input_dim = 1
-inf_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations= "poisson", transitions="standard")
+inf_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations= "poisson", transitions="inputdriven")
 inf_glmhmm.observations = GLM_PoissonObservations(num_states, obs_dim, input_dim) ##obs:"inputdriven" "standard"
 
 N_iters = 100 # maximum number of EM iterations. Fitting with stop earlier if increase in LL is below tolerance specified by tolerance parameter
@@ -198,7 +199,7 @@ posterior_probs = [inf_glmhmm.expected_states(data=data, input=inpt)[0]
                 in zip(true_spikes_ssm, inpts_ssm)]
 
 # %% posterior states
-sess_id = 0 #session id; can choose any index between 0 and num_sess-1
+sess_id = 2 #session id; can choose any index between 0 and num_sess-1
 plt.figure(figsize=(15,10))
 for k in range(num_states):
     plt.plot(posterior_probs[sess_id][:, k], label="State " + str(k + 1), lw=2)
@@ -206,6 +207,7 @@ plt.ylim((-0.01, 1.01))
 plt.yticks([0, 0.5, 1])
 plt.xlabel("time", fontsize = 30)
 plt.ylabel("p(state)", fontsize = 30)
+plt.xlim([0,len(inpts_ssm[sess_id])])
 
 plt.figure(figsize=(15,10))
 plt.subplot(4,1,(1,3))
@@ -222,17 +224,17 @@ plt.legend(['state 1', 'state 2', 'state 3'], fontsize=20)
 
 # %% build behavioral classifier
 spk_up, spk_down = [], []
-rep_ = 10
+rep_ = 5
 my_glmrnn.T = 200
 for sess in range(rep_):
-    true_y, true_z = my_target.stochastic_rate(1, (m1,m2),0.)
-    spk_up.append(true_y[:,T//2:].T) # .sum(0)
-#    temp = my_glmrnn.kernel_filt(true_y)
-#    spk_up.append(temp[:,T//2:])
-    true_y, true_z = my_target.stochastic_rate(0, (m1,m2),0.)
-    spk_down.append(true_y[:,T//2:].T)
-#    temp = my_glmrnn.kernel_filt(true_y)
-#    spk_down.append(temp[:,T//2:])
+    true_y, true_z = my_target.stochastic_rate(1) #, (m1,m2),0.)
+#    spk_up.append(true_y[:,T//2:].T) # .sum(0)
+    temp = my_glmrnn.kernel_filt(true_y)
+    spk_up.append(temp[:,T//2:])
+    true_y, true_z = my_target.stochastic_rate(0) #, (m1,m2),0.)
+#    spk_down.append(true_y[:,T//2:].T)
+    temp = my_glmrnn.kernel_filt(true_y)
+    spk_down.append(temp[:,T//2:])
     
 spk_up = np.array(spk_up).reshape(-1,N)
 spk_down = np.array(spk_down).reshape(-1,N)
@@ -264,12 +266,12 @@ for ss in range(rep):  # session loop
             pos_stim_state = np.intersect1d(pos_stim, pos_state)  # state and stimuli joint
 #            pos_stim_state = np.intersect1d(pos_stim, pos_stim)
             if len(pos_stim_state)>100:  # not empty
-                response = true_spikes_ssm[ss][pos_stim_state,:] #.sum(0)
-#                response = local_filt(true_spikes_ssm[ss][pos_stim_state,:].T).T
+#                response = true_spikes_ssm[ss][pos_stim_state,:] #.sum(0)
+                response = local_filt(true_spikes_ssm[ss][pos_stim_state,:].T).T
                 # use logsitic regresion here to output choice from pattern
                 choice_t = log_reg_network(response) #[None,:]
 #                choice_t = kmeans.predict(X_test)
-                num_choice = len(np.where(choice_t==0)[0]) #/ len(pos_stim_state)
+                num_choice = len(np.where(choice_t==1)[0]) #/ len(pos_stim_state)
                 # normalized by session for proper probability
                 state_ch[kk, ii] += num_choice ### still need to normalize for probability
                 keep_n[kk,ii] += len(choice_t)

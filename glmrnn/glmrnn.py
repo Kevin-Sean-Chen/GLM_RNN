@@ -45,6 +45,7 @@ class glmrnn:
             self.nbins = nbins  # time window tiled
             self.W = np.random.randn(N,N,nbasis)*0.1  # tensor with kernel weights
         self.lamb = 0  # regularization
+        self.lamb2 = 0  # for testing other regularization terms
         
     def forward(self, ipt=None):
         """
@@ -245,8 +246,10 @@ class glmrnn:
             b,U,W = self.vec2param(ww)
             ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
                     - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
-                    - self.lamb*(np.linalg.norm(W) + np.linalg.norm(U))
-#                    - self.lamb*np.linalg.norm(W)
+                    - self.lamb2*np.linalg.norm((np.eye(self.N)-W@W.T)) \
+                    - self.lamb*np.linalg.norm(W)
+#                    - self.lamb*(np.linalg.norm(W) + np.linalg.norm(U))
+#                    
             return -ll
         elif state is not None:
             b,U,W,ws = self.vec2param(ww, True)
