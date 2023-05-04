@@ -148,7 +148,6 @@ class target_spk(object):
                 latent[int(self.T/2):] = 1
             else:
                 latent[int(self.T/2):] = -1
-            spk = self._forward(latent)
         else:
             m1,m2 = ms  # if the loading patterns are given
             latent[int(self.T/2):] = 1
@@ -159,9 +158,9 @@ class target_spk(object):
             ####
             # for disengaged state... add another small probablity for not even reacting!
             ####
-            if np.random.rand() < eps:
-                latent *= 0
-            spk = self._forward(latent)
+        if np.random.rand() < eps:
+            latent = 0*latent
+        spk = self._forward(latent)
         return spk, latent
     
     def brunel_spk(self, phase, lk):

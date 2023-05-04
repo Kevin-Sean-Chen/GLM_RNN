@@ -246,8 +246,9 @@ class glmrnn:
             b,U,W = self.vec2param(ww)
             ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
                     - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
-                    - self.lamb2*np.linalg.norm((np.eye(self.N)-W@W.T)) \
-                    - self.lamb*np.linalg.norm(W)
+                    - self.lamb*np.linalg.norm(W) \ 
+                    - self.lamb2*np.sum(np.linalg.norm(W, axis=1))
+#                    - self.lamb2*np.linalg.norm((np.eye(self.N)-W@W.T)) \
 #                    - self.lamb*(np.linalg.norm(W) + np.linalg.norm(U))
 #                    
             return -ll
@@ -467,6 +468,13 @@ class glmrnn:
                     lli = -self.neg_log_likelihood(ww, spk.T, rt, ipt, stt)
                     ll += np.sum(lli)
             return ll
+        
+    def test_ll(self, spks):
+        """
+        After fitting parameters, we can use this fucntion to compute test log-likelihood
+        """
+        ll = 0
+        return ll
         
     def log_marginal_kernel(self, ww, spks, ipts):
         """
