@@ -13,7 +13,7 @@ from autograd.scipy.special import logsumexp
 from ssm.regression import fit_scalar_glm
 
 from ssm.util import ensure_args_are_lists
-from ssm.optimizers import adam, bfgs, rmsprop, sgd
+from ssm.optimizers import adam, bfgs, rmsprop, sgd, lbfgs
 
 eps = 10**-10
 class glmrnn:
@@ -26,7 +26,7 @@ class glmrnn:
         self.tau = tau
         self.kernel_type, self.nl_type, self.spk_type = kernel_type, nl_type, spk_type
         if nl_type=='sigmoid':    
-            self.lamb_max = 100
+            self.lamb_max = 10
             self.lamb_min = 0
         if spk_type=="neg-bin":
             self.rnb = 0.1
@@ -103,11 +103,44 @@ class glmrnn:
         if self.nl_type=='exp':
             nl = np.exp(x)
         if self.nl_type=='log-linear':
-            nl = np.log((1+np.exp(x))+eps)
+#            nl = np.log((1+np.exp(x))+eps)
+            nl = self.stable_softmax(x)
         if self.nl_type=='sigmoid':
-            nl = (self.lamb_max-self.lamb_min)/(1+np.exp(-x*0.1)) + self.lamb_min    
+            nl = (self.lamb_max-self.lamb_min)/(1+np.exp(-x)) + self.lamb_min    
         return nl
     
+    def stable_softmax(self, x, log=None):
+        """
+        Stable softmax and log-likelihood
+        """
+        low_cut = -20
+        high_cut = 500
+        
+        if log is None:
+            f = np.log(1+np.exp(x))
+            if len(np.where(x < low_cut)[0]) > 0:
+                iix = np.where(x < low_cut)[0]
+                f[iix] = np.exp(x[iix])
+            if len(np.where(x > high_cut)[0]) > 0:
+                iix = np.where(x > high_cut)[0]
+                f[iix] = x[iix]
+        if log is True:
+            f = np.log(np.log(1+np.exp(x)))
+            if len(np.where(x < low_cut)[0]) > 0:
+                iix = np.where(x < low_cut)[0]
+                f[iix] = x[iix]
+            if len(np.where(x > high_cut)[0]) > 0:
+                iix = np.where(x > high_cut)[0]
+                f[iix] = np.log(x[iix])
+        return f
+    
+    def sigmoid_ll(self, y_true, y_pred):
+        """
+        Compute log-likelihood of sigmoid function
+        """
+        ll = np.sum( y_true*np.log(y_pred) + (self.lamb_max - y_true)*np.log(self.lamb_max - y_pred))
+        return ll
+
     def spiking(self, nl):
         """
         Spiking process that emits descrete spikes given continuous rate
@@ -244,10 +277,23 @@ class glmrnn:
         """
         if state is None:
             b,U,W = self.vec2param(ww)
-            ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
-                    - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
-                    - self.lamb*np.linalg.norm(W) \ 
+            ### testing sigmoid
+            ll = self.sigmoid_ll(spk, self.nonlinearity((W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt)) \
+                    - self.lamb*np.linalg.norm(W) \
                     - self.lamb2*np.sum(np.linalg.norm(W, axis=1))
+                    
+            ### direct log
+#            ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
+#                    - self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
+#                    - self.lamb*np.linalg.norm(W) \
+#                    - self.lamb2*np.sum(np.linalg.norm(W, axis=1))
+            
+            ### stable peice-wise log for softmax
+#            ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
+#            ll = np.sum(spk * self.stable_softmax(W @ rt + b[:,None] + U[:,None]*ipt.T , log=True) \
+#                    - self.stable_softmax(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
+#                    - self.lamb*np.linalg.norm(W) \
+#                    - self.lamb2*np.sum(np.linalg.norm(W, axis=1))
 #                    - self.lamb2*np.linalg.norm((np.eye(self.N)-W@W.T)) \
 #                    - self.lamb*(np.linalg.norm(W) + np.linalg.norm(U))
 #                    
@@ -506,11 +552,11 @@ class glmrnn:
         return res.fun, res.success
     
     # @ensure_args_are_lists
-    def fit_glm(self, data, num_iters=1000, optimizer="bfgs", **kwargs):
+    def fit_glm(self, data, num_iters=1000, optimizer="lbfgs", **kwargs):
         """
         Borrowing the ssm package method
         """
-        optimizer = dict(adam=adam, bfgs=bfgs, rmsprop=rmsprop,
+        optimizer = dict(adam=adam, bfgs=bfgs, rmsprop=rmsprop, lbfgs=lbfgs,
                          sgd=sgd)[optimizer]
         l_spk, l_ut = data
         if l_ut[0] is None and self.kernel_type!='basis':

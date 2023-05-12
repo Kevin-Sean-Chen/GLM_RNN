@@ -5,6 +5,7 @@ Created on Sat Feb 18 22:44:33 2023
 @author: kevin
 """
 import numpy as np
+import random
 # from glmrnn.glmrnn import glmrnn as gr
 
 class target_spk(object):
@@ -200,6 +201,13 @@ class target_spk(object):
         
         return spk, rt
     
-    def stochastic_states(self):
-        # GLM-HMM class
-        return
+    def stochastic_states(self, n_repeat):
+        """
+        training with blocks (in contrast to stochastc_rate that is a single trial)
+        """
+        true_ipt = None ##... figure this out
+        long_ipt = np.array(random.sample(true_ipt, n_repeat)).reshape(-1)[:,None]
+        self.T = len(long_ipt)
+        latent = None  ## make positive and negative flipping latent
+        spk = self._forward(latent)
+        return spk, latent
