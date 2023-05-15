@@ -278,9 +278,9 @@ class glmrnn:
         if state is None:
             b,U,W = self.vec2param(ww)
             ### testing sigmoid
-            ll = self.sigmoid_ll(spk, self.nonlinearity((W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt)) \
-                    - self.lamb*np.linalg.norm(W) \
-                    - self.lamb2*np.sum(np.linalg.norm(W, axis=1))
+#            ll = self.sigmoid_ll(spk, self.nonlinearity((W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt)) \
+#                    - self.lamb*np.linalg.norm(W) \
+#                    - self.lamb2*np.sum(np.linalg.norm(W, axis=1))
                     
             ### direct log
 #            ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
@@ -290,10 +290,10 @@ class glmrnn:
             
             ### stable peice-wise log for softmax
 #            ll = np.sum(spk * np.log(self.nonlinearity(W @ rt + b[:,None] + U[:,None]*ipt.T)+eps) \
-#            ll = np.sum(spk * self.stable_softmax(W @ rt + b[:,None] + U[:,None]*ipt.T , log=True) \
-#                    - self.stable_softmax(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
-#                    - self.lamb*np.linalg.norm(W) \
-#                    - self.lamb2*np.sum(np.linalg.norm(W, axis=1))
+            ll = np.sum(spk * self.stable_softmax(W @ rt + b[:,None] + U[:,None]*ipt.T , log=True) \
+                    - self.stable_softmax(W @ rt + b[:,None] + U[:,None]*ipt.T)*self.dt) \
+                    - self.lamb*np.linalg.norm(W) \
+                    - self.lamb2*np.sum(np.linalg.norm(W, axis=1))
 #                    - self.lamb2*np.linalg.norm((np.eye(self.N)-W@W.T)) \
 #                    - self.lamb*(np.linalg.norm(W) + np.linalg.norm(U))
 #                    

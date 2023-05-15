@@ -51,15 +51,16 @@ M = np.random.randn(N,N)
 uu,ss,vv = np.linalg.svd(M)
 scale = 5  # loading strength
 eps = .0  # disengage states
-m1,m2 = uu[:,0]*scale, uu[:,1]*scale
-targ_spk, targ_latent = my_target.stochastic_rate(prob, ms=None, eps=eps)  #, (m1,m2), eps)
+m1,m2 = uu[:,0]*scale, (uu[:,1]+uu[:,0]*1.)*scale
+#targ_spk, targ_latent = my_target.stochastic_rate(prob, ms=None, eps=eps)  #, (m1,m2), eps)
+targ_spk, targ_latent = my_target.stochastic_rate(prob, (m1,m2), eps)
 
 plt.figure()
 plt.imshow(targ_spk, aspect='auto')
 
 # %% test with random input
 #input sequence
-num_sess = 100 # number of example sessions
+num_sess = 50 # number of example sessions
 
 inpts_ = np.zeros(T)[:,None]
 inpts_[int(T/2):] = prob
@@ -72,20 +73,33 @@ inpts = list(inpts) #convert inpts to correct format
 # %% generate training sets
 true_latents, true_spikes, true_ipt = [], [], []
 for sess in range(num_sess):
-    true_y, true_z = my_target.stochastic_rate(prob,eps=eps) #, (m1,m2), eps)
+#    true_y, true_z = my_target.stochastic_rate(prob,eps=eps) #, (m1,m2), eps)
+    true_y, true_z = my_target.stochastic_rate(prob,(m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
     true_ipt.append(inpts[sess])
     
     ### for mixed learning
-    true_y, true_z = my_target.stochastic_rate(0.8,eps=eps) #, (m1,m2), eps)
+#    true_y, true_z = my_target.stochastic_rate(0.8,eps=eps) #, (m1,m2), eps)
+    true_y, true_z = my_target.stochastic_rate(0.9,(m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
-    true_ipt.append(inpts_50*2 *0.8)
-    true_y, true_z = my_target.stochastic_rate(0.2,eps=eps) #, (m1,m2), eps)
+    true_ipt.append(inpts_50*2 *0.9)
+#    true_y, true_z = my_target.stochastic_rate(0.2,eps=eps) #, (m1,m2), eps)
+    true_y, true_z = my_target.stochastic_rate(0.1,(m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
-    true_ipt.append(inpts_50*2 *0.2)  
+    true_ipt.append(inpts_50*2 *0.1)  
+    
+    true_y, true_z = my_target.stochastic_rate(0.7,(m1,m2), eps)
+    true_spikes.append(true_y.T)
+    true_latents.append(true_z)
+    true_ipt.append(inpts_50*2 *0.7)  
+    
+    true_y, true_z = my_target.stochastic_rate(0.3,(m1,m2), eps)
+    true_spikes.append(true_y.T)
+    true_latents.append(true_z)
+    true_ipt.append(inpts_50*2 *0.3)  
     
     ###
     ###
@@ -97,9 +111,9 @@ for sess in range(num_sess):
 # %% inference
 datas = (true_spikes, true_ipt)
 my_glmrnn.T = 200
-my_glmrnn.lamb = 0.
-my_glmrnn.lamb2 = 0.
-my_glmrnn.fit_glm(datas)  # using ssm gradient
+my_glmrnn.lamb = 2.  # 2.  seems to relate to transition!
+my_glmrnn.lamb2 = 0.5  # 0.5  seems to relate to pattern seperation!
+my_glmrnn.fit_glm(datas) #, optimizer="rmsprop")  # using ssm gradient
 
 # %%
 ii = 0
@@ -184,10 +198,10 @@ for rr in range(rep):
     inpts_ssm.append(long_ipt[pos])
     
 # %% inference
-num_states = 3
+num_states = 2
 obs_dim = N*1
 input_dim = 1
-inf_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations= "poisson", transitions="inputdriven")
+inf_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations= "poisson", transitions="standard")
 inf_glmhmm.observations = GLM_PoissonObservations(num_states, obs_dim, input_dim) ##obs:"inputdriven" "standard"
 
 N_iters = 100 # maximum number of EM iterations. Fitting with stop earlier if increase in LL is below tolerance specified by tolerance parameter
@@ -199,7 +213,7 @@ posterior_probs = [inf_glmhmm.expected_states(data=data, input=inpt)[0]
                 in zip(true_spikes_ssm, inpts_ssm)]
 
 # %% posterior states
-sess_id = 0 #session id; can choose any index between 0 and num_sess-1
+sess_id = 2 #session id; can choose any index between 0 and num_sess-1
 plt.figure(figsize=(15,10))
 for k in range(num_states):
     plt.plot(posterior_probs[sess_id][:, k], label="State " + str(k + 1), lw=2)
@@ -224,14 +238,17 @@ plt.legend(['state 1', 'state 2', 'state 3'], fontsize=20)
 
 # %% build behavioral classifier
 spk_up, spk_down = [], []
-rep_ = 20
+rep_ = 10
 my_glmrnn.T = 200
 for sess in range(rep_):
-    true_y, true_z = my_target.stochastic_rate(1,eps=0) #, (m1,m2),0.)
+#    true_y, true_z = my_target.stochastic_rate(1,eps=0) #, (m1,m2),0.)
+    true_y, true_z = my_target.stochastic_rate(1, (m1,m2),0.)
     spk_up.append(true_y[:,T//2:].T) # .sum(0)
 #    temp = my_glmrnn.kernel_filt(true_y)
 #    spk_up.append(temp[:,T//2:].T)
-    true_y, true_z = my_target.stochastic_rate(0,eps=0) #, (m1,m2),0.)
+    
+#    true_y, true_z = my_target.stochastic_rate(0,eps=0) #, (m1,m2),0.)
+    true_y, true_z = my_target.stochastic_rate(0, (m1,m2),0.)
     spk_down.append(true_y[:,T//2:].T)
 #    temp = my_glmrnn.kernel_filt(true_y)
 #    spk_down.append(temp[:,T//2:].T)
@@ -241,7 +258,7 @@ spk_down = np.array(spk_down).reshape(-1,N)
 X = np.concatenate((spk_up, spk_down))
 y = np.concatenate((np.ones(T*rep_//2), np.zeros(T*rep_//2)))
 #y = np.concatenate((np.ones(rep_), np.zeros(rep_)))
-clf = LogisticRegression(random_state=0).fit(X, y) ### now clf takes N cell input and outputs label
+clf = LogisticRegression().fit(X, y) ### now clf takes N cell input and outputs label
 #clf.predict(X[:2, :])
 def log_reg_network(x_):
     return clf.predict(x_)
@@ -254,7 +271,8 @@ def local_filt(spk):
     return rt
 
 # %% state-dependent psychometrics
-ipt_vals = np.array([0.2, 0.5, 0.8])
+#ipt_vals = np.array([0.2, 0.5, 0.8])
+ipt_vals = np.array([0.1, 0.3, 0.5, 0.7, 0.9])
 state_ch = np.zeros((num_states, len(ipt_vals)))  # state x stim
 keep_n = state_ch*0
 for ss in range(rep):  # session loop
@@ -263,9 +281,13 @@ for ss in range(rep):  # session loop
         pos_state = np.where(np.argmax(post,1)==kk)[0]  # pick state
         for ii in range(len(ipt_vals)):  # stimuli loop
             pos_stim = np.where(inpts_ssm[ss]==ipt_vals[ii])[0]  # pick stimuli
+            
+            ### conditionals
             pos_stim_state = np.intersect1d(pos_state, pos_stim)  # state and stimuli joint
 #            pos_stim_state = np.intersect1d(pos_stim, pos_stim)
-            if len(pos_stim_state)>100:  # not empty
+#            pos_stim_state = np.intersect1d(pos_state, pos_state)
+            
+            if len(pos_stim_state)>1:  # not empty
                 response = true_spikes_ssm[ss][pos_stim_state,:] #.sum(0)
 #                response = local_filt(true_spikes_ssm[ss][pos_stim_state,:].T).T
                 # use logsitic regresion here to output choice from pattern
@@ -278,8 +300,9 @@ for ss in range(rep):  # session loop
 state_psyc = state_ch / keep_n #
 #state_psyc = state_ch / np.sum(state_ch,1)#
 plt.plot(ipt_vals, state_psyc.T,'--o')
+plt.plot(ipt_vals, ipt_vals, 'k--')
 plt.xlabel('input strength',fontsize=30)
 plt.ylabel('choice probability', fontsize=30)
 plt.title('P(output|input,state)',fontsize=30)
 #plt.title('P(output|input)',fontsize=30)
-#plt.ylim([0.3,0.8])
+plt.ylim([0.0,1.0])
