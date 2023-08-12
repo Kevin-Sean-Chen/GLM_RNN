@@ -310,7 +310,28 @@ def generate_trials(n_trials, coherences=[-2, -1, 1, 2], std=3., T=100):
         coh_trials.append(coh)
         
     return inputs, targets, mask, coh_trials
+
+def generate_trials2(n_trials, coherences=[.25, .75], T=T):
+    """
+    Generate deterministic input but stochastic output
+    """
+    inputs = torch.zeros((n_trials, T, 1))
+    targets = torch.ones((n_trials, T, 1))
+    mask = torch.zeros((n_trials, T, 1))
+    coh_trials = []
+    mask[:, T-1] = 1  # set mask to one only at the end
+    
+    for i in range(n_trials):
+        coh = random.choice(coherences)
+        inputs[i] += coh
+        if coh > np.random.rand():
+            targets[i,:] = -1#torch.rand(200,1)
+        else:
+            targets[i,:] = 1
+        coh_trials.append(coh)
         
+    return inputs, targets, mask, coh_trials
+      
 # Complete the following function returning the error
 
 def error_function(outputs, targets, masks):
@@ -365,6 +386,9 @@ def accuracy(net):
    n_trials = 100
    inputs_pos, _, _, _ = generate_trials(n_trials, coherences=[+1])
    inputs_neg, _, _, _ = generate_trials(n_trials, coherences=[-1])
+   
+#   inputs_pos, _, _, _ = generate_trials2(n_trials, coherences=[.75])
+#   inputs_neg, _, _, _ = generate_trials2(n_trials, coherences=[.25])
    _, outputs_pos = net.forward(inputs_pos)
    _, outputs_neg = net.forward(inputs_neg)
    outputs_pos = outputs_pos.detach().numpy().squeeze()
@@ -377,6 +401,9 @@ print(accuracy(my_net))
 # %%
 inputs_pos, _, _, _ = generate_trials(100, coherences=[+1])
 inputs_neg, _, _, _ = generate_trials(100, coherences=[-1])
+
+#inputs_pos, _, _, _ = generate_trials2(100, coherences=[.75])
+#inputs_neg, _, _, _ = generate_trials2(100, coherences=[.25])
 
 # run network
 traj_pos, output_pos = my_net.forward(inputs_pos)
@@ -406,8 +433,8 @@ plt.plot(mean_output_neg, c='b')
 for i in range(output_neg.shape[0]):
     plt.plot(output_neg[i], c='b', alpha=.05)
     
-plt.xlabel('timesteps')
-plt.ylabel('network readout')
+plt.xlabel('time step',fontsize=30)
+plt.ylabel('network readout',fontsize=30)
 
 # %%
 def plot_neuron_condition_averaged(neuron_idx, traj_pos, traj_neg, mean_traj_pos, mean_traj_neg):

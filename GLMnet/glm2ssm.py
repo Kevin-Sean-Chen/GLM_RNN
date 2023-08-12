@@ -19,6 +19,9 @@ import ssm
 import autograd.numpy as np
 import numpy.random as npr
 
+import sys
+sys.path.append('C:\\Users\\kevin\\OneDrive\\Documents\\github\\GLM_RNN\\')
+
 from glmrnn.glm_obs_class import GLM_PoissonObservations
 from glmrnn.glmrnn import glmrnn
 from glmrnn.target_spk import target_spk
@@ -26,6 +29,7 @@ from glmrnn.target_spk import target_spk
 from sklearn.cluster import KMeans
 from sklearn.linear_model import LogisticRegression
 import random
+from scipy import stats
 
 import matplotlib 
 matplotlib.rc('xtick', labelsize=30) 
@@ -73,29 +77,30 @@ inpts = list(inpts) #convert inpts to correct format
 # %% generate training sets
 true_latents, true_spikes, true_ipt = [], [], []
 for sess in range(num_sess):
-#    true_y, true_z = my_target.stochastic_rate(prob,eps=eps) #, (m1,m2), eps)
-    true_y, true_z = my_target.stochastic_rate(prob,(m1,m2), eps)
+    true_y, true_z = my_target.stochastic_rate(prob,eps=eps) #, (m1,m2), eps)
+#    true_y, true_z = my_target.stochastic_rate(prob,(m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
     true_ipt.append(inpts[sess])
     
     ### for mixed learning
-#    true_y, true_z = my_target.stochastic_rate(0.8,eps=eps) #, (m1,m2), eps)
+#    true_y, true_z = my_target.stochastic_rate(0.9,eps=eps) #, (m1,m2), eps)
     true_y, true_z = my_target.stochastic_rate(0.9,(m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
     true_ipt.append(inpts_50*2 *0.9)
-#    true_y, true_z = my_target.stochastic_rate(0.2,eps=eps) #, (m1,m2), eps)
+#    true_y, true_z = my_target.stochastic_rate(0.1,eps=eps) #, (m1,m2), eps)
     true_y, true_z = my_target.stochastic_rate(0.1,(m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
     true_ipt.append(inpts_50*2 *0.1)  
     
+#    true_y, true_z = my_target.stochastic_rate(0.7,eps=eps) #, (m1,m2), eps)
     true_y, true_z = my_target.stochastic_rate(0.7,(m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
     true_ipt.append(inpts_50*2 *0.7)  
-    
+#    true_y, true_z = my_target.stochastic_rate(0.3,eps=eps) #, (m1,m2), eps)
     true_y, true_z = my_target.stochastic_rate(0.3,(m1,m2), eps)
     true_spikes.append(true_y.T)
     true_latents.append(true_z)
@@ -111,8 +116,8 @@ for sess in range(num_sess):
 # %% inference
 datas = (true_spikes, true_ipt)
 my_glmrnn.T = 200
-my_glmrnn.lamb = 2.  # 2.  seems to relate to transition!
-my_glmrnn.lamb2 = 0.5  # 0.5  seems to relate to pattern seperation!
+my_glmrnn.lamb = 3.  # 2., 0.  seems to relate to transition!
+my_glmrnn.lamb2 = 2.  # 1., 0.5  seems to relate to pattern seperation!
 my_glmrnn.fit_glm(datas) #, optimizer="rmsprop")  # using ssm gradient
 
 # %%
@@ -155,6 +160,7 @@ predvec = kmeans.predict(X_test)  # test with biased generative model
 print(np.sum(predvec)/rep)
 
 # %%
+plt.figure()
 plt.hist(np.array(m_pattern))
 plt.xlabel('pattern correlation',fontsize=30)
 plt.ylabel('count', fontsize=30)
@@ -176,6 +182,7 @@ plt.xlim([0,len(long_ipt)])
 # %% plot simple psychometric curve
 prob_vec = np.array([0.1, 0.3, 0.5,0.7,0.9])
 res_prob = np.array([[0.02,0,0],[0.24,0.26,0.11],[0.45,0.5,0.62],[0.78,0.76,0.68],[1,0.96,0.99]])
+plt.figure()
 plt.plot(prob_vec, res_prob,'ko')
 plt.xlabel('input strength',fontsize=30)
 plt.ylabel('choice probability', fontsize=30)
@@ -198,7 +205,7 @@ for rr in range(rep):
     inpts_ssm.append(long_ipt[pos])
     
 # %% inference
-num_states = 2
+num_states = 3
 obs_dim = N*1
 input_dim = 1
 inf_glmhmm = ssm.HMM(num_states, obs_dim, input_dim, observations= "poisson", transitions="standard")
@@ -213,7 +220,7 @@ posterior_probs = [inf_glmhmm.expected_states(data=data, input=inpt)[0]
                 in zip(true_spikes_ssm, inpts_ssm)]
 
 # %% posterior states
-sess_id = 2 #session id; can choose any index between 0 and num_sess-1
+sess_id = 0 #session id; can choose any index between 0 and num_sess-1
 plt.figure(figsize=(15,10))
 for k in range(num_states):
     plt.plot(posterior_probs[sess_id][:, k], label="State " + str(k + 1), lw=2)
@@ -299,6 +306,7 @@ for ss in range(rep):  # session loop
                 keep_n[kk,ii] += len(choice_t)
 state_psyc = state_ch / keep_n #
 #state_psyc = state_ch / np.sum(state_ch,1)#
+plt.figure()
 plt.plot(ipt_vals, state_psyc.T,'--o')
 plt.plot(ipt_vals, ipt_vals, 'k--')
 plt.xlabel('input strength',fontsize=30)
@@ -306,3 +314,12 @@ plt.ylabel('choice probability', fontsize=30)
 plt.title('P(output|input,state)',fontsize=30)
 #plt.title('P(output|input)',fontsize=30)
 plt.ylim([0.0,1.0])
+
+slope, intercept, r_value, p_value, std_err = stats.linregress(ipt_vals, state_psyc[0,:])
+print(slope)
+
+plt.figure()
+#plt.subplot(121)
+plt.imshow(inf_glmhmm.transitions.transition_matrix)
+#plt.subplot(122)
+#plt.plot(inf_glmhmm.transitions.Ws)

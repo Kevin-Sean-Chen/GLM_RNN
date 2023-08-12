@@ -27,11 +27,11 @@ matplotlib.rc('xtick', labelsize=60)
 matplotlib.rc('ytick', labelsize=60) 
 
 # %% functions
-def NL(x, lamb0, dt):
+def NL(x, lamb0=1, dt=.1):
     x = lamb0*x
 #    x[x<0] = 0  #ReLU
-#    x = np.exp(x)  #exp
-    x = 1/gain*np.log(1+np.exp(gain*x)) #soft rectification
+    x = np.exp(x/10)  #exp
+#    x = 1/gain*np.log(1+np.exp(gain*x)) #soft rectification
 #    x = lamb0/(1+np.exp(-x))  #sigmoid
     return x
 
@@ -126,7 +126,7 @@ plt.plot(Wij.reshape(-1), w_ole.reshape(-1),'o')
 # %%
 dd = N*N
 w_init = np.zeros([dd,])  #Wij.reshape(-1)#
-res = sp.optimize.minimize(lambda w: negLL(w, st,spk,bt,dt,np.exp),w_init,method='L-BFGS-B',tol=1e-4)
+res = sp.optimize.minimize(lambda w: negLL(w, st,spk,bt,dt,NL),w_init,method='L-BFGS-B',tol=1e-4)
 w_map = res.x
 print(res.success)
 
@@ -155,7 +155,7 @@ plt.semilogy(eih,'-o')
 # %%
 ###############################################################################
 # %% scan over different structure strength vs. low-rank angle
-reps = 10
+reps = 5
 dels = np.zeros((5,reps))  #three input vectors by repeats
 cors = np.zeros((5,reps))
 dd = N*N
@@ -197,7 +197,7 @@ my_xticks = ['m','n','orthogonal','unit','w/o']
 plt.xticks(x, my_xticks)
 plt.ylabel(r'MSE($J_{inf},J_{true}$)',fontsize=60)
 #plt.xlabel('input projection',fontsize=50)
-plt.ylim([0.6,.8])
+#plt.ylim([0.6,.8])
 
 # %%
 ###############################################################################

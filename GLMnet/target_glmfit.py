@@ -207,7 +207,7 @@ for sess in range(num_sess):
 #    true_y, true_z = my_target.chaotic()
 #    true_y, true_z = my_target.oscillation(7)
 #    true_y, true_z = my_target.bistable()  # does NOT work!
-    true_y, true_z = my_target.line_attractor(5)
+#    true_y, true_z = my_target.line_attractor(5)
     true_y, true_z = my_target.stochastic_rate(prob)
     
     true_r = my_glmrnn.kernel_filt(true_y)
@@ -234,11 +234,14 @@ plt.ylabel('loss')
 plt.show()
 
 # %% generative with rate
-trid = 2
+trid = 10
 _, outputs_rt = inf_net.forward(inp)
-plt.figure()
+plt.figure(figsize=(15,10))
+plt.subplot(121)
+plt.title('true activity',fontsize=40)
 plt.imshow(outputs_rt[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
-plt.figure()
+plt.subplot(122)
+plt.title('inferred activity',fontsize=40)
 plt.imshow(target_rates[trid,:,:].T.detach().numpy().squeeze(), aspect='auto')
 
 # %% generative with spikes

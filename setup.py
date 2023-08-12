@@ -6,6 +6,10 @@ Created on Wed Feb  8 15:22:16 2023
 """
 
 from setuptools import setup, find_packages
+import os
+
+# Make sources available using relative paths from this file's directory.
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Kevin's firt setup file
 
@@ -26,7 +30,8 @@ setup(
     long_description = long_description,
     license = "MIT license",
     packages = find_packages(exclude=["test"]),  # Don't include test directory in binary distribution
-    install_requires = requirements,
+#    install_requires = requirements,
+    py_modules=['glmrnn.glmrnn'],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
