@@ -156,6 +156,40 @@ plt.xlabel('true Jij', fontsize=30)
 plt.ylabel('inferred Jij', fontsize=30)
             
 
+# %% test with coarse-graining (burst measurements)
+# inference with fully observed network
+# inference with coarse-grained measurements
+# what are the features that can and cannot be inferred
+# solve with small model, then apply to larger simulations
+
+# %% measure g(x,y) as bursts
+Bt = np.sum(sigma,0)  # burst, sum of spikes through time
+dB = np.diff(Bt)
+# compute some state transitions, and check how it constrains Jij
+# compute emperical transitions firsy
+N_state = len(np.unique(Bt))
+Bij = np.zeros((N_state, N_state))
+pi_B = np.zeros(N_state)
+for tt in range(T-1):
+    current_bst, next_bst = int(Bt[tt]), int(Bt[tt+1])
+    Bij[current_bst, next_bst] += 1
+    pi_B[current_bst] += 1
+
+Bij = Bij/pi_B[:,None]
+
+# %% MaxCal recipe
+def gxy_state_test(x, y, obs=0):
+    gxy = 0
+    # write down some bust constraints here
+    return gxy
+
+###
+    # start with 2 neurons
+    # 6 observables with bursts: 2pi 3 eta 1 J
+    # try MaxCal to infer 2r, 2W, 2f
+    # put down 1/3 prior and test if symmetry constains inference
+    # ... numerically show it preserves for N=5-10 neurons; theoretical
+###
 
 # %% more careful calculaion of eqn. 11, old/incorrect version
 #n_comb = N-2  # the rest other than a pair
@@ -218,82 +252,7 @@ plt.ylabel('inferred Jij', fontsize=30)
 #plt.xlabel('true Jij', fontsize=30)
 #plt.ylabel('inferred Jij', fontsize=30)
 
-# %% Code for Max-Cal method
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-# %% pseudo-code for now
-N = 3  # number of neurons
-spins = [0,1]  # binary patterns
-combinations = list(itertools.product(spins, repeat=N))  # possible configurations
-nc = len(combinations)
-Mxy = np.random.rand(2**N, 2**N) + np.eye(2**N)*5  # all patterns to all patterns transition matrix
-Mxy = Mxy / Mxy.sum(0)[:,None]
-## delta example
-gs = [(1,1,1), (2,2,1)]  #x,y,g(x,y)
-def g_function(x,y):
-    """
-    test function for g(x,y) as the constraints
-    """
-    if np.sum(x+y) == 2*2:  # bust detection
-        gxy = 1
-    elif (x==(1,1,0)) and (y==(0,0,0)):  # transition
-        gxy = 0.5
-    elif (x==(1,1,0)) and (y==(0,1,0)):  # transition
-        gxy = 0.5
-    else:
-        gxy = 0
-    return gxy
-
-beta = 1 #np.ones(len(gs))
-Mxy_ = Mxy*1
-Gxy = Mxy*0
-for ii in range(2**N):
-    for jj in range(2**N):
-        Gxy[ii,jj] = g_function(combinations[ii] , combinations[jj])
-        Mxy_[ii,jj] = Mxy[ii,jj] * np.exp(beta * Gxy[ii,jj])
-
-uu, vr = np.linalg.eig(Mxy_)  # right vector
-u2, vl = np.linalg.eig(Mxy_.T)  # left vectors
-lamb,lp = np.max(np.abs(np.real(uu))), np.argmax(np.abs(np.real(uu)))  # max real eigen value
-vrx, vlx = np.real(vr[:,lp]), np.real(vl[:,lp])
-vrx, vlx = vrx/np.linalg.norm(vrx), vlx/np.linalg.norm(vlx)  # normalize eigen vectors
-vrx, vlx = vrx/np.dot(vrx,vlx), vlx/np.dot(vrx,vlx)
-Pyx = (vrx)/(lamb*(vlx))*Mxy_  # posterior.... not  sure about this?
-
-# %% write functions for optimization
-def lamb_beta(beta):
-    # return largest eigen value given beta vector
-    Mxy_ = Mxy*1
-    for ii in range(N):
-        for jj in range(N):
-            Mxy_[ii,jj] = Mxy[ii,jj] * np.exp(beta * g_function(combinations[ii] , combinations[jj]))
-    uu, vr = np.linalg.eig(Mxy_)  # right vector
-    u2, vl = np.linalg.eig(Mxy_.T)  # left vectors
-    lamb,lp = np.max(np.abs(np.real(uu))), np.argmax(np.abs(np.real(uu)))  # max real eigen value
-    vrx, vlx = np.real(vr[:,lp]), np.real(vl[:,lp])
-    vrx, vlx = vrx/np.linalg.norm(vrx), vlx/np.linalg.norm(vlx)  # normalize eigen vectors
-    vrx, vlx = vrx/np.dot(vrx,vlx), vlx/np.dot(vrx,vlx)
-    Pyx = (vrx)/(lamb*(vlx))*Mxy_  # posterior.... not  sure about this?
-    Pxy = (vrx*vlx)[None,:] @ Pyx
-    return lamb, Pxy
-
-def expect_g(Pxy, Gxy=Gxy):
-    # put in posterior calculation and stationary probability
-    g_bar = np.sum(Pxy @ Gxy)
-    return g_bar
-
-def objective(beta):
-    lamb,Pxy = lamb_beta(beta)
-    g_bar = expect_g(Pxy)
-    obj = np.dot(beta, g_bar) - np.log(lamb)
-    return -obj # do scipy.minimization on this
-
-# %%
-beta0 = 0
-# Minimize the function
-result = minimize(objective, beta0)
-print(result.x)
-
-# %%
+# %% test code for Markov process
 ###############################################################################
 # %%
 import numpy as np

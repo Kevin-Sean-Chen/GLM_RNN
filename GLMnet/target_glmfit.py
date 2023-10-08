@@ -21,8 +21,8 @@ import autograd.numpy as np
 import numpy.random as npr
 
 #from glmrnn.glm_obs_class import GLM_PoissonObservations
-from glmrnn.glmrnn import glmrnn
-from glmrnn.target_spk import target_spk
+from glmrnn import glmrnn
+from target_spk import target_spk
 
 from sklearn.cluster import KMeans
 
@@ -184,7 +184,7 @@ plt.xlim([0,len(long_ipt)])
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # %% use rate RNN and Poisson log-likelihood
-from glmrnn.rnn_torch import RNN, lowrank_RNN, observed_RNN, RNNTrainer
+from rnn_torch import RNN, lowrank_RNN, observed_RNN, RNNTrainer
 import torch
 
 # %% setup target
